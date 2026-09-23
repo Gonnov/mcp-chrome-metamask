@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.local/mcp-chrome-metamask",
+  "description": "Drive a real browser with a real wallet extension, so an agent can test a dapp end to end: connect, sign, transact, confirm.",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mcp-chrome-metamask",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "RIG_PRIVATE_KEY",
+          "description": "Burner private key to import into the test wallet. Omit to let the wallet generate its own account. Never use a key with real funds.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "RIG_KEY_FILE",
+          "description": "Path to a file containing only a burner private key, as an alternative to RIG_PRIVATE_KEY.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ],
+      "packageArguments": [
+        { "type": "named", "name": "--chain-id", "description": "Chain id to fix for this session.", "isRequired": false },
+        { "type": "named", "name": "--rpc-url", "description": "RPC endpoint for that chain.", "isRequired": false },
+        { "type": "named", "name": "--network-name", "description": "Display name for the network.", "isRequired": false },
+        { "type": "named", "name": "--symbol", "description": "Native currency symbol.", "isRequired": false },
+        { "type": "named", "name": "--app-url", "description": "Default URL of the app under test.", "isRequired": false },
+        { "type": "named", "name": "--key-file", "description": "Path to a file containing only a burner key.", "isRequired": false },
+        { "type": "named", "name": "--headless", "description": "Run the browser without a window.", "isRequired": false },
+        { "type": "named", "name": "--allow-mainnet", "description": "Permit auto-approval on chains that spend real money. Off by default.", "isRequired": false }
+      ]
+    }
+  ]
+}

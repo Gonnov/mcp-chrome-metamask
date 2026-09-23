@@ -1,0 +1,47 @@
+{
+  "name": "mcp-chrome-metamask",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Drive a real browser with a real wallet extension, so an agent can test a dapp end to end: connect, sign, transact, confirm.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "serve": "tsx src/daemon/index.ts",
+    "rig": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "mcp": "tsx src/mcp.ts",
+    "setup": "playwright install chromium",
+    "smoke": "tsx scripts/mcp-smoke.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check": "pnpm typecheck && pnpm test",
+    "buy": "tsx scripts/mcp-buy.ts",
+    "mcp:loop": "tsx scripts/mcp-loop.ts",
+    "buy:loop": "tsx scripts/buy-loop.ts",
+    "envless": "tsx scripts/envless-check.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "playwright": "1.61.0",
+    "sharp": "^0.35.4",
+    "viem": "^2.56.8",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.0"
+  },
+  "bin": {
+    "mcp-chrome-metamask": "bin/mcp-chrome-metamask",
+    "rig": "bin/rig",
+    "dapp": "bin/dapp"
+  },
+  "files": [
+    "bin",
+    "src",
+    "server.json",
+    "README.md"
+  ],
+  "license": "MIT"
+}

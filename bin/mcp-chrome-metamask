@@ -1,0 +1,4 @@
+#!/bin/sh
+# MCP stdio entry point. Nothing may print to stdout but protocol frames.
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec node --import "$DIR/node_modules/tsx/dist/loader.mjs" "$DIR/src/mcp.ts" "$@"

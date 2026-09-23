@@ -1,0 +1,4 @@
+#!/bin/sh
+# Thin launcher so the agent can run ./bin/rig <cmd> from anywhere.
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec node --import "$DIR/node_modules/tsx/dist/loader.mjs" "$DIR/src/cli.ts" "$@"
