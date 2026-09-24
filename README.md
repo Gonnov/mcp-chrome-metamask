@@ -143,7 +143,9 @@ Things an agent should know:
 
 - **The wallet persists.** `setup` runs once; later sessions start unlocked. `rig_session stop` closes the browser, the next call relaunches it.
 - **Open the site before wallet calls.** `rig_wallet connect` and `rig_wallet request` run `window.ethereum` in the page under test, because MetaMask scopes accounts and the selected network per site. With no site open they return `NO_APP_PAGE`.
-- **Look before you click.** `rig_look aria` is the cheap way to read a page; `rig_look find` reports whether a control is visible and enabled, and apps often render a disabled twin of the button you want.
+- **Look before you click.** `rig_look aria` is the cheap way to read a page; `rig_look find` reports whether a control is visible and enabled, and apps often render a disabled twin of the button you want. The tree covers modals mounted outside `<body>` (wallet SDK dialogs do this) and child frames: they come back as extra `# dialog` / `# frame` sections, listed in `extraRoots`.
+- **The default target stays on the site.** Wallet pages the rig opens for itself (status, add-network, address) never become the default target, so `active` still means the site under test. `rig_navigate use` pins another one when you want it.
+- **A slow page is not a failure.** If `goto` outruns its timeout but the page is in fact loaded, it returns normally with `slow: true` instead of `TIMEOUT`. Pass `timeout` to raise the 45s default.
 - **Wait for the prompt, then approve.** `rig_navigate wait for=popup` returns as soon as MetaMask has a request; `rig_wallet approve all=true` clears the queue, gating each item on its own.
 - **Every error carries a code.** `CHAIN_NOT_ALLOWED`, `CHAIN_UNKNOWN`, `NETWORK_ADD_REFUSED`, `NO_APP_PAGE`, `TIMEOUT`, `UNKNOWN_ARGS` and the rest come back as JSON with `error`, `code` and often `details`, so a client can branch on them.
 - **A refusal is final from the agent's side.** No tool argument lifts the real-money gate. If a chain is legitimately a testnet the registry does not know, the person running the rig vouches for it from their shell.
