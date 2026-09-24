@@ -50,7 +50,7 @@ export const tools = [
   {
     name: 'rig_look',
     description:
-      'See the page. screenshot returns the image inline. aria returns the accessibility tree, which is usually enough and far cheaper than an image. ocr returns numbered word boxes with centre coordinates for clicking by id when the DOM is not usable. find locates an element by text and reports whether it is visible and enabled.',
+      'See the page. screenshot returns the image inline. aria returns the accessibility tree, which is usually enough and far cheaper than an image; it also covers modals portalled outside <body> and child frames, appended as labelled sections. ocr returns numbered word boxes with centre coordinates for clicking by id when the DOM is not usable. find locates an element by text and reports whether it is visible and enabled.',
     inputSchema: {
       type: 'object',
       properties: {

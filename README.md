@@ -219,7 +219,7 @@ Eight tools, each taking an `action`. 44 actions in total.
 <details>
 <summary><strong>👁️ Looking (5 actions)</strong></summary>
 
-- `rig_look aria` - Accessibility tree, usually enough and far cheaper than an image
+- `rig_look aria` - Accessibility tree, including portalled dialogs and child frames; usually enough and far cheaper than an image
 - `rig_look screenshot` - Image inline, downscaled by default, full resolution on request
 - `rig_look ocr` - Numbered word boxes with centre coordinates, for markup you cannot query
 - `rig_look find` - Locate by text, reporting whether it is visible and enabled

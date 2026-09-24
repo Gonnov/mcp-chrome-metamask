@@ -66,13 +66,58 @@ export async function cmdOcr(args: Args): Promise<CmdResult> {
   };
 }
 
+/** Roots a modal can be mounted on, in or out of <body>. */
+const DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"], dialog[open], [aria-modal="true"]';
+
+/** The first meaningful line of a snapshot, used to tell whether it is already included. */
+function head(snapshot: string): string {
+  return snapshot.split('\n').find((l) => l.trim().length > 0)?.trim() ?? '';
+}
+
+/**
+ * The accessibility tree of a page, including what a body snapshot misses: a
+ * modal portalled outside <body> (wallet SDK modals do this), and the content
+ * of child frames. Each extra root is appended as its own labelled section.
+ */
 export async function cmdAria(args: Args): Promise<CmdResult> {
   const page = target(args);
+  let body: string;
   try {
-    return { snapshot: await page.locator('body').ariaSnapshot({ timeout: 10_000 }) };
+    body = await page.locator('body').ariaSnapshot({ timeout: 10_000 });
   } catch (err) {
     throw RigError.wrap(err);
   }
+
+  const sections: string[] = [body];
+  const extras: { root: string; url?: string }[] = [];
+
+  const dialogs = page.locator(DIALOG_SELECTOR);
+  const n = Math.min(await dialogs.count().catch(() => 0), 5);
+  for (let i = 0; i < n; i++) {
+    const loc = dialogs.nth(i);
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    const snap = await loc.ariaSnapshot({ timeout: 5_000 }).catch(() => '');
+    // A dialog inside <body> is already in the snapshot above; only one
+    // mounted elsewhere (or hidden from it) is worth repeating.
+    if (!snap.trim() || body.includes(head(snap))) continue;
+    sections.push(`# dialog ${i} (${DIALOG_SELECTOR})\n${snap}`);
+    extras.push({ root: `dialog[${i}]` });
+  }
+
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    const url = frame.url();
+    if (!url || url === 'about:blank') continue;
+    const snap = await frame.locator('body').ariaSnapshot({ timeout: 5_000 }).catch(() => '');
+    if (!snap.trim()) continue;
+    sections.push(`# frame ${url}\n${snap}`);
+    extras.push({ root: 'frame', url });
+  }
+
+  return {
+    snapshot: sections.join('\n\n'),
+    ...(extras.length ? { extraRoots: extras } : {}),
+  };
 }
 
 /** The ARIA role a caller restricts a search to; Playwright validates the value itself. */
