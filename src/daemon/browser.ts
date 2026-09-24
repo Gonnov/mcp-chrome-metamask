@@ -80,10 +80,31 @@ export function pageId(page: Page): number {
   return id;
 }
 
+/**
+ * Follow a page automatically. Wallet pages are never followed: the rig opens
+ * the extension's own UI to read status, add a network or read an address, and
+ * a default target that drifted there would send the next click to the wallet
+ * instead of the site under test. `use mm`, an explicit --target, and an
+ * explicit goto still reach it; those go through setActive/resolveTarget.
+ */
+function follow(page: Page): void {
+  const kind = classify(page);
+  if (kind === 'app') {
+    activePage = page;
+    return;
+  }
+  // A tab starts on about:blank and only then navigates, so an unclassified
+  // page is followed only when nothing else holds the default.
+  if (kind === 'other' && !currentPage()) activePage = page;
+}
+
 function track(page: Page): void {
   pageId(page);
   if (!pages.includes(page)) pages.push(page);
-  activePage = page;
+  follow(page);
+  page.on('framenavigated', (f) => {
+    if (f === page.mainFrame()) follow(page);
+  });
   page.on('console', (msg) => {
     pushLog(page, `[${msg.type()}] ${msg.text().slice(0, 500)}`);
   });
@@ -98,7 +119,9 @@ function track(page: Page): void {
     if (i >= 0) pages.splice(i, 1);
     ocrCache.delete(pageId(page));
     logs.delete(pageId(page));
-    if (activePage === page) activePage = pages.at(-1) ?? null;
+    if (activePage === page) {
+      activePage = livePages().filter((p) => classify(p) === 'app').at(-1) ?? pages.at(-1) ?? null;
+    }
   });
 }
 
@@ -173,7 +196,12 @@ export function resolveTarget(target?: Target): Page {
       // Prefer an open popup: after one opens it is almost always the subject.
       const pops = popupPages();
       if (pops.length > 0) return pops[pops.length - 1] as Page;
-      return currentPage() ?? (live[live.length - 1] as Page);
+      const cur = currentPage();
+      if (cur) return cur;
+      // Nothing was acted on yet: the site under test beats a wallet tab the
+      // rig opened for itself.
+      const app = live.filter((p) => classify(p) === 'app').at(-1);
+      return app ?? (live[live.length - 1] as Page);
     }
   }
 }
@@ -258,12 +286,7 @@ export async function launch(opts: { headless: boolean }): Promise<RigBrowser> {
   writeState({ extensionId });
 
   for (const p of context.pages()) track(p);
-  context.on('page', (p) => {
-    track(p);
-    p.on('framenavigated', (f) => {
-      if (f === p.mainFrame()) activePage = p;
-    });
-  });
+  context.on('page', (p) => track(p));
   // The browser can die under the daemon: a crash, or the user quitting it.
   // Without this the daemon would answer every command with a Playwright error
   // and still look healthy to its clients.
