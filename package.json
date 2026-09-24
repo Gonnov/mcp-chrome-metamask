@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "mcp": "tsx src/mcp.ts",
     "setup": "playwright install chromium",
+    "setup:browser": "playwright install chromium",
     "smoke": "tsx scripts/mcp-smoke.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "pnpm typecheck && pnpm test",

@@ -67,10 +67,14 @@ There is no npm package yet: you get the source and run it in place through
 
 ```bash
 cd mcp-chrome-metamask
-pnpm install          # dependencies
-pnpm setup            # the pinned Chromium (a one-time download, not run by install)
-pnpm check            # typecheck + unit tests, no browser needed
+pnpm install            # dependencies
+pnpm run setup:browser  # the pinned Chromium (a one-time download, not run by install)
+pnpm check              # typecheck + unit tests, no browser needed
 ```
+
+`setup:browser` is also aliased as `setup`, but write that one as `pnpm run
+setup`: bare `pnpm setup` is pnpm's own builtin (it configures pnpm's home
+directory) and never reaches this package's script.
 
 MetaMask itself is staged on the first start: copied from a Brave or Chrome
 profile on this machine when one has it installed, otherwise downloaded from
