@@ -24,6 +24,7 @@ import { bool, num, numOpt, pick, str, unknownKeys } from '../src/args.js';
 import { formatNative, toWeiHex } from '../src/chain.js';
 import { similarity } from '../src/ocr.js';
 import { shortAddress } from '../src/metamask/onboard.js';
+import { matchKnown } from '../src/metamask/account.js';
 import { RigError } from '../src/types.js';
 
 // ---- chain id parsing ---------------------------------------------------------
@@ -368,4 +369,19 @@ test('sameDestination: a redirect inside the site is the same destination', () =
   assert.equal(sameDestination('about:blank', 'https://app.test/'), false);
   assert.equal(sameDestination('http://app.test/', 'https://app.test/'), false);
   assert.equal(sameDestination('not a url', 'https://app.test/'), false);
+});
+
+// ---- reading the wallet address without a connected site ----------------------
+
+test('matchKnown resolves a truncated address against known accounts', () => {
+  const full = '0x1234567890abcdef1234567890ABCDEF12345678';
+  assert.equal(matchKnown('0x123456...12345678', [full]), full);
+  assert.equal(matchKnown('0x123456…12345678', [undefined, full]), full);
+  // A head that matches but a tail that does not is a different account.
+  assert.equal(matchKnown('0x123456...99999999', [full]), null);
+  assert.equal(matchKnown('0x999999...12345678', [full]), null);
+  // Nothing to match against, or nothing that looks like an address.
+  assert.equal(matchKnown('0x123456...12345678', [undefined]), null);
+  assert.equal(matchKnown('Account 1', [full]), null);
+  assert.equal(matchKnown('0x123456...12345678', ['0x12']), null);
 });
