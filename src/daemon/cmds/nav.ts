@@ -35,6 +35,39 @@ export async function cmdUse(args: Args): Promise<CmdResult> {
   return { target: t };
 }
 
+/** Same place, allowing for a redirect inside the site. */
+export function sameDestination(current: string, wanted: string): boolean {
+  if (current === wanted) return true;
+  try {
+    const a = new URL(current);
+    const b = new URL(wanted);
+    return a.protocol === b.protocol && a.host === b.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Did the navigation arrive anyway? A slow page can blow the goto timeout and
+ * still be there a moment later, and reporting TIMEOUT for a page the caller
+ * can see is worse than saying it was slow. Script evaluation is blocked on
+ * wallet pages, so there the URL is the only evidence.
+ */
+async function arrived(page: Page, url: string, graceMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + graceMs;
+  do {
+    if (page.isClosed()) return false;
+    if (sameDestination(page.url(), url)) {
+      const ready = await page.evaluate(() => document.readyState).catch(() => null);
+      // null: an extension page, or a page mid-navigation that refused the
+      // evaluate. The URL already says the navigation committed.
+      if (ready === null || ready === 'interactive' || ready === 'complete') return true;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 export async function cmdGoto(args: Args): Promise<CmdResult> {
   const url = str(args, 'value') ?? str(args, 'url');
   if (!url) throw new RigError('BAD_ARGS', 'goto needs a url');
@@ -47,13 +80,20 @@ export async function cmdGoto(args: Args): Promise<CmdResult> {
   } catch {
     page = await getRig().context.newPage();
   }
+  let slow = false;
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: num(args, 'timeout', 45_000) });
   } catch (err) {
-    throw RigError.wrap(err);
+    if (!(await arrived(page, url))) throw RigError.wrap(err);
+    slow = true;
   }
   setActive(page);
-  return { ...(await pageInfo(page)) };
+  return {
+    ...(await pageInfo(page)),
+    ...(slow
+      ? { slow: true, note: 'the navigation outran its timeout but the page is loaded; treat it as open' }
+      : {}),
+  };
 }
 
 export async function cmdClose(args: Args): Promise<CmdResult> {

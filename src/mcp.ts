@@ -85,8 +85,12 @@ async function navigate(a: Args): Promise<CallToolResult> {
       return text(await callDaemon('close', target));
     case 'use':
       return text(await callDaemon('use', { value: str(a, 'value') ?? 'active' }));
-    default:
-      return text(await callDaemon('goto', { ...target, value: str(a, 'url') }));
+    default: {
+      const timeout = numOf(a, 'timeout');
+      return text(
+        await callDaemon('goto', { ...target, value: str(a, 'url'), ...(timeout ? { timeout } : {}) }),
+      );
+    }
   }
 }
 

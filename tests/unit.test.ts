@@ -14,7 +14,7 @@ import { parseLaunchArgs, launchArgsToArgv } from '../src/config.js';
 import { toHexChainId } from '../src/metamask/network.js';
 import { assertVersion, VERSION_RE } from '../src/metamask/fetch.js';
 import { hostAllowed } from '../src/daemon/server.js';
-import { allowedUrl, shotPath } from '../src/daemon/commands.js';
+import { allowedUrl, sameDestination, shotPath } from '../src/daemon/commands.js';
 import { readEnvFile, writeJsonAtomic } from '../src/daemon/state.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
@@ -357,4 +357,15 @@ test('similarity is 1 for equal text and drops with edits', () => {
 
 test('shortAddress matches MetaMask truncation at both ends', () => {
   assert.deepEqual(shortAddress('0xFB1525e16FDA109a5180a3Ec23A7146b870E045b'), { head: '0xfb152', tail: 'e045b' });
+});
+
+// ---- goto: a slow page that arrived anyway ------------------------------------
+
+test('sameDestination: a redirect inside the site is the same destination', () => {
+  assert.equal(sameDestination('https://app.test/x', 'https://app.test/x'), true);
+  assert.equal(sameDestination('https://app.test/en/home', 'https://app.test/'), true);
+  assert.equal(sameDestination('https://other.test/', 'https://app.test/'), false);
+  assert.equal(sameDestination('about:blank', 'https://app.test/'), false);
+  assert.equal(sameDestination('http://app.test/', 'https://app.test/'), false);
+  assert.equal(sameDestination('not a url', 'https://app.test/'), false);
 });

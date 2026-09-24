@@ -26,5 +26,5 @@ export const generic: Record<string, (a: Args) => Promise<CmdResult>> = {
   result: cmdResult,
 };
 
-export { allowedUrl } from './cmds/nav.js';
+export { allowedUrl, sameDestination } from './cmds/nav.js';
 export { shotPath } from './cmds/look.js';

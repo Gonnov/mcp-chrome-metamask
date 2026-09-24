@@ -40,7 +40,7 @@ export const tools = [
           description: 'What wait should wait for.',
         },
         value: { type: 'string', description: 'The text, url fragment, selector, or millisecond count to wait for.' },
-        timeout: { type: 'number', description: 'Wait timeout in ms. Default 15000.' },
+        timeout: { type: 'number', description: 'Timeout in ms: for wait (default 15000) and for goto (default 45000). A goto that outruns it but did load returns normally with slow: true.' },
         width: { type: 'number' },
         height: { type: 'number' },
         target: TARGET,
