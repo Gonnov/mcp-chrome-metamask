@@ -28,6 +28,22 @@ export const REJECT_ALL = '[data-testid="confirm-nav__reject-all"]'; // VERIFIED
 export const SCROLL_TO_BOTTOM = '[data-testid="scroll-to-bottom"]'; // VERIFIED
 
 /**
+ * MetaMask's one-time "Third-party software notice" (13.48), drawn as a modal
+ * over the first connect request a wallet ever sees. Accepting it grants
+ * nothing; the request beneath is still read and gated. Left in place, its
+ * footer reuses the legacy page-container buttons, so the page classifies as a
+ * `legacy` prompt with no network and the gate refuses the connect under it.
+ */
+export const THIRD_PARTY_NOTICE = {
+  /** The modal, by the heading MetaMask gives it. */
+  heading: /^Third-party software notice$/, // VERIFIED (live aria)
+  /** Its text box, the element whose scroll position enables Accept. */
+  content: '.snap-privacy-warning__content', // VERIFIED (bundle)
+  scrollButton: '.snap-privacy-warning__content__scroll-button, [data-testid="snap-privacy-warning-scroll"]', // VERIFIED (bundle)
+  accept: /^Accept$/,
+};
+
+/**
  * Markers used to classify what a notification window is asking for. Order is
  * priority: the value-moving kinds come before `connect`, since `confirm-btn`
  * also appears as a secondary button on some warning pages. The gate judges
@@ -41,13 +57,24 @@ export const KIND_MARKERS: { kind: PopupKind; sel: string }[] = [
   { kind: 'connect', sel: '[data-testid="confirm-btn"]' },
 ];
 
-/** The one primary button each kind owns. Approve never clicks anything else. */
-export const KIND_APPROVE: Partial<Record<PopupKind, string>> = {
-  'tx-or-sign': '[data-testid="confirm-footer-button"]',
-  legacy: '[data-testid="page-container-footer-next"]',
-  confirmation: '[data-testid="confirmation-submit-button"]',
-  connect: '[data-testid="confirm-btn"]',
+/**
+ * The primary button each kind owns. Approve never clicks anything else. A
+ * connect request has two faces in 13.48: the account picker (`confirm-btn`)
+ * and the "Review permissions" page, which reuses the legacy footer.
+ */
+export const KIND_APPROVE: Partial<Record<PopupKind, string[]>> = {
+  'tx-or-sign': ['[data-testid="confirm-footer-button"]'],
+  legacy: ['[data-testid="page-container-footer-next"]'],
+  confirmation: ['[data-testid="confirmation-submit-button"]'],
+  connect: ['[data-testid="confirm-btn"]', '[data-testid="page-container-footer-next"]'],
 };
+
+/**
+ * The connect flow's own routes (13.48): the account picker and the review
+ * page. Only these two; a snap install also lives under /connect and must keep
+ * classifying by its buttons.
+ */
+export const CONNECT_ROUTE = /^\/connect\/[^/]+(\/confirm-permissions)?$/;
 
 /**
  * Where a request page names the network it will execute on, when it has a

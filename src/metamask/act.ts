@@ -1,7 +1,7 @@
 /** Acting on a wallet request: approve, reject, and the drain loop over the queue. */
 import type { Locator, Page } from 'playwright';
 import { RigError, type PopupGate, type PopupKind, type PromptInfo } from '../types.js';
-import { KIND_APPROVE, REJECT_ALL, REJECT_SELECTORS, REJECT_TEXTS, SCROLL_TO_BOTTOM } from './selectors.js';
+import { KIND_APPROVE, REJECT_ALL, REJECT_SELECTORS, REJECT_TEXTS, SCROLL_TO_BOTTOM, THIRD_PARTY_NOTICE } from './selectors.js';
 import { firstButton, firstShown, shown, waitEnabled } from './dom.js';
 import { ensureUnlocked } from './unlock.js';
 import { readPrompt } from './prompt.js';
@@ -59,6 +59,36 @@ async function pressPrimary(page: Page, prompt: PromptInfo, target: Locator, lab
 }
 
 /**
+ * Acknowledge the third-party software notice when it sits over a request, so
+ * the request itself can be read. The notice's Accept only enables once its
+ * own text has been scrolled to the end. Returns whether a notice was there.
+ */
+export async function acceptThirdPartyNotice(page: Page): Promise<boolean> {
+  const modal = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: THIRD_PARTY_NOTICE.heading }) }).first();
+  if (!(await modal.isVisible({ timeout: 300 }).catch(() => false))) return false;
+  const scrollButton = modal.locator(THIRD_PARTY_NOTICE.scrollButton).first();
+  if (await scrollButton.isVisible({ timeout: 200 }).catch(() => false)) {
+    await scrollButton.click({ timeout: 2000 }).catch(() => undefined);
+    await page.waitForTimeout(300);
+  }
+  // Accept watches the text box's own scroll position, so scroll that box to its end.
+  await modal
+    .locator(THIRD_PARTY_NOTICE.content)
+    .evaluateAll((els) => {
+      for (const el of els) {
+        el.scrollTop = el.scrollHeight;
+        el.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    })
+    .catch(() => undefined);
+  const accept = modal.getByRole('button', { name: THIRD_PARTY_NOTICE.accept });
+  if (!(await waitEnabled(accept, 4000))) return false;
+  await accept.click({ timeout: 3000 }).catch(() => undefined);
+  await page.waitForTimeout(500);
+  return true;
+}
+
+/**
  * Approve the request the prompt describes. Only that kind's own button is
  * clicked: the kind is what the gate judged, so clicking any other primary
  * button on the page would approve something the gate never saw. A request
@@ -67,7 +97,8 @@ async function pressPrimary(page: Page, prompt: PromptInfo, target: Locator, lab
 export async function approve(page: Page, prompt: PromptInfo): Promise<ActResult> {
   const own = KIND_APPROVE[prompt.kind];
   if (!own) throw new RigError('NO_ACTION', `no approve button for a ${prompt.kind} prompt (${page.url()})`);
-  const target = await firstShown(page, [own], 500);
+  await acceptThirdPartyNotice(page);
+  const target = await firstShown(page, own, 500);
   if (!target) throw new RigError('NO_ACTION', `the ${prompt.kind} prompt's button is not visible (${page.url()})`);
   const label = (await target.innerText().catch(() => ''))?.trim() || 'button';
   return pressPrimary(page, prompt, target, label);
@@ -108,6 +139,7 @@ export async function drain(
     let page = await ensureNotification();
     if (page.isClosed()) break;
     await ensureUnlocked(page);
+    await acceptThirdPartyNotice(page);
     let prompt = await readPrompt(page);
     if (prompt.kind === 'unknown') {
       // One reload: a just-approved request can leave the route mid-transition.

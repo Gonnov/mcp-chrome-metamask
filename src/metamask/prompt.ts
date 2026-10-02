@@ -6,13 +6,25 @@
  */
 import type { Page } from 'playwright';
 import type { PopupKind, PromptInfo } from '../types.js';
-import { KIND_MARKERS, NETWORK_DISPLAY, NETWORK_SWITCH_TARGET, PROMPT_ROWS } from './selectors.js';
+import { CONNECT_ROUTE, KIND_MARKERS, NETWORK_DISPLAY, NETWORK_SWITCH_TARGET, PROMPT_ROWS } from './selectors.js';
 import { shown } from './dom.js';
 
 /** Per-marker probe: a rendered prompt shows its button at once. */
 const MARKER_PROBE_MS = 150;
 
+function routeOf(url: string): string {
+  try {
+    return new URL(url).hash.replace(/^#/, '');
+  } catch {
+    return '';
+  }
+}
+
 export async function detectKind(page: Page): Promise<PopupKind> {
+  // The connect flow's review page draws the legacy footer and names no single
+  // network (it lists the enabled ones), so by its buttons it would read as a
+  // `legacy` request with an unknown chain. It grants a site access, nothing more.
+  if (CONNECT_ROUTE.test(routeOf(page.url()))) return 'connect';
   for (const { kind, sel } of KIND_MARKERS) {
     if (await shown(page, sel, MARKER_PROBE_MS)) return kind;
   }
