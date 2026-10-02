@@ -3,7 +3,7 @@ import type { Page } from 'playwright';
 import type { CmdResult } from '../../types.js';
 import * as chain from '../../chain.js';
 import { busy, classify, closeOrBlank, ensurePage, getRig, listPages, livePages } from '../browser.js';
-import { env, readState, writeState } from '../state.js';
+import { env, readDaemon, readState, writeState } from '../state.js';
 import { getPort } from '../server.js';
 import { config } from '../../config.js';
 import { listPopups } from '../../metamask/notification.js';
@@ -70,8 +70,13 @@ export async function boot(): Promise<CmdResult> {
  */
 export async function status(): Promise<CmdResult> {
   const state = readState();
+  const record = readDaemon();
+  const port = record?.port ?? getPort();
+  const headless = record?.headless ?? false;
   const out: CmdResult = {
-    daemon: { pid: process.pid, port: getPort(), uptimeSec: Math.round(process.uptime()), busy: busy() },
+    port,
+    headless,
+    daemon: { pid: process.pid, port, headless, uptimeSec: Math.round(process.uptime()), busy: busy() },
     extensionId: state.extensionId,
     metamask: { version: state.metamaskVersion, source: state.metamaskSource },
     onboarded: state.onboarded ?? false,
