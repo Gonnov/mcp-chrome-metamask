@@ -92,7 +92,7 @@ export async function readAddress(getHome: () => Promise<Page>, opts: { keep?: b
 
     if (short) {
       const state = readState();
-      const known = matchKnown(short, [state.importedAddress, state.walletAddress]);
+      const known = matchKnown(short, [state.importedAddress, state.walletAddress, ...(state.importedAddresses ?? [])]);
       if (known) return { address: known, addressShort: short, source: 'known' };
       return {
         addressShort: short,

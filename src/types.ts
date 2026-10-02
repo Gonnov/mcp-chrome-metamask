@@ -106,6 +106,8 @@ export interface RigState {
   metamaskSource?: 'brave' | 'github';
   onboarded?: boolean;
   importedAddress?: string;
+  /** Every account imported into this profile, in import order; `importedAddress` is the last one. */
+  importedAddresses?: string[];
   /** The selected account as last read from the wallet's own UI. */
   walletAddress?: string;
   networks?: { chainId: string; name: string; rpc: string }[];

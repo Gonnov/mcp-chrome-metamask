@@ -373,6 +373,17 @@ test('sameDestination: a redirect inside the site is the same destination', () =
 
 // ---- reading the wallet address without a connected site ----------------------
 
+test('matchKnown picks the right account out of several imported ones', () => {
+  const a = '0xAc319fE6c38448f9A52A982a09fC100570813d06';
+  const b = '0x8025EBad670F3d8966FCc5085Db35306B22041B7';
+  const c = '0xf53cbe62a1D42507c3bdE6D48a3cd058A31DCB17';
+  // MetaMask's header shows 5 hex digits each side ("0x8025E...041B7").
+  assert.equal(matchKnown('0x8025E...041B7', [c, undefined, a, b]), b);
+  assert.equal(matchKnown('0xAc319...13d06', [c, b, a]), a);
+  assert.equal(matchKnown('0xf53cb...DCB17', [a, b, c]), c);
+  assert.equal(matchKnown('0xdead0...beef0', [a, b, c]), null);
+});
+
 test('matchKnown resolves a truncated address against known accounts', () => {
   const full = '0x1234567890abcdef1234567890ABCDEF12345678';
   assert.equal(matchKnown('0x123456...12345678', [full]), full);

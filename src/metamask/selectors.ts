@@ -160,6 +160,8 @@ export const ACCOUNT = {
 };
 
 export const HOME = {
+  /** One row per account on the #/account-list route; the popover and name ids share the prefix. */
+  accountCell: '[data-testid^="multichain-account-cell-"]:not([data-testid*="popover"]):not([data-testid*="-name-"]):not([data-testid*="menu"])', // VERIFIED (bundle)
   accountMenu: '[data-testid="account-menu-icon"]', // VERIFIED
   accountOptions: '[data-testid="account-options-menu-button"]', // VERIFIED
 };

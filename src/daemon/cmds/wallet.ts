@@ -10,12 +10,12 @@ import { closeNotification, ensureNotification, listPopups } from '../../metamas
 import { readPrompt } from '../../metamask/prompt.js';
 import { approve, drain, reject } from '../../metamask/act.js';
 import { ensureUnlocked, unlockAnywhere } from '../../metamask/unlock.js';
-import { findPrivateKey, importKey, onboard, readPrivateKey } from '../../metamask/onboard.js';
+import { findPrivateKey, importKey, onboard, readPrivateKey, selectAccount } from '../../metamask/onboard.js';
 import { ethAccounts, ethChainIdHex, existingAppPage, pageOrigin, providerPage, requestWithApproval } from '../../metamask/provider.js';
 import { readAddress } from '../../metamask/account.js';
-import { withHome } from '../../metamask/ui.js';
+import { gotoHome, withHome } from '../../metamask/ui.js';
 import { shown } from '../../metamask/dom.js';
-import { UNLOCK } from '../../metamask/selectors.js';
+import { HOME, UNLOCK } from '../../metamask/selectors.js';
 import { chainGate } from '../gate.js';
 import { mmHomePage } from './session.js';
 import { addNetworkHere, hasNetworkSpec, networkSpec } from './network.js';
@@ -228,6 +228,30 @@ const commands: Record<string, (args: Args) => Promise<CmdResult>> = {
     const result = await importKey(mmHomePage, key, addressOf(key));
     if (str(args, 'pkey')) result['warning'] = ARGV_KEY_WARNING;
     return result;
+  },
+  // Make an already-imported account the wallet's selected one (a key can be
+  // imported once; a second proof run on the same profile must switch instead).
+  async select(args) {
+    const address = str(args, 'address') ?? str(args, 'value');
+    if (!address) throw new RigError('BAD_ARGS', 'mm select needs --address 0x…');
+    const page = await mmHomePage();
+    await page.bringToFront().catch(() => undefined);
+    await ensureUnlocked(page);
+    const selected = await selectAccount(page, address);
+    if (!selected && bool(args, 'debug')) {
+      await gotoHome(page, '/account-list', 700);
+      const cells = await page.locator(HOME.accountCell).allInnerTexts().catch(() => []);
+      await page.getByRole('searchbox').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+      await page.waitForTimeout(1500);
+      const anyCells = await page.locator('[data-testid]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid'))).catch(() => []);
+      const texts = await page.locator('p').allInnerTexts().catch(() => []);
+      return { address, selected, url: page.url(), cells, testIds: [...new Set(anyCells)].slice(0, 80), texts: texts.slice(0, 30) };
+    }
+    // `active` is what `mm address` reads back now: the caller can see at once
+    // whether the switch took, instead of trusting `selected`.
+    const read = await readAddress(mmHomePage);
+    const active = read.address ?? read.addressShort ?? null;
+    return { address, selected, active, activeSource: read.source };
   },
   async 'add-network'(args) {
     return addNetworkHere(await networkSpec(args), args);

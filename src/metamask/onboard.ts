@@ -214,9 +214,11 @@ export async function importKey(
   if (page.isClosed()) page = await getPage();
   await ensureUnlocked(page);
   const state = readState();
-  if (state.importedAddress?.toLowerCase() === expectedAddress.toLowerCase()) {
+  const known = [...(state.importedAddresses ?? []), ...(state.importedAddress ? [state.importedAddress] : [])];
+  const wanted = expectedAddress.toLowerCase();
+  if (known.some((a) => a.toLowerCase() === wanted)) {
     const already = await selectAccount(page, expectedAddress);
-    return { alreadyImported: true, address: state.importedAddress, selected: already };
+    return { alreadyImported: true, address: expectedAddress, selected: already };
   }
 
   if (page.isClosed()) page = await getPage();
@@ -264,7 +266,7 @@ export async function importKey(
   await dismissNags(page);
 
   const selected = await selectAccount(page, expectedAddress);
-  writeState({ importedAddress: expectedAddress });
+  writeState({ importedAddress: expectedAddress, importedAddresses: [...known, expectedAddress] });
   return { imported: true, address: expectedAddress, selected };
 }
 
@@ -292,33 +294,45 @@ export function shortAddress(address: string): { head: string; tail: string } {
   return { head: a.slice(0, 7), tail: a.slice(-5) };
 }
 
-function matchesShort(text: string, address: string): boolean {
-  const { head, tail } = shortAddress(address);
-  const t = text.toLowerCase().replace(/\s+/g, '');
-  // 13.48 shortens to 5 trailing characters on the home header and 4 in some lists.
-  return t.startsWith(head) && (t.endsWith(tail) || t.endsWith(tail.slice(-4)));
-}
-
-/** Make the imported account the selected one, so dapps see it. */
+/**
+ * Make an imported account the selected one, so dapps see it.
+ *
+ * Reads the wallet through its accessibility tree: script evaluation is blocked
+ * on wallet pages, so text extraction returns nothing there. The home header
+ * names the selected account; the #/account-list route lists every account as
+ * a name paragraph followed by its shortened address, and clicking the name
+ * selects it.
+ */
 export async function selectAccount(page: Page, address: string): Promise<boolean> {
-  await gotoHome(page, '/', 700);
-  const header = (await page.locator('p').allInnerTexts().catch(() => [])) as string[];
-  if (header.some((t) => matchesShort(t, address))) return true;
+  const { head, tail } = shortAddress(address);
+  const mentions = (text: string): boolean => {
+    const t = text.toLowerCase().replace(/\s+/g, '');
+    return t.includes(head) && (t.includes(tail) || t.includes(tail.slice(-4)));
+  };
+  const snapshot = async (): Promise<string> => page.locator('body').ariaSnapshot({ timeout: 3000 }).catch(() => '');
+  const selectedOnHome = async (): Promise<boolean> => {
+    await gotoHome(page, '/', 1200);
+    // The header is the top of the tree; the token list below never prints addresses.
+    return mentions((await snapshot()).slice(0, 900));
+  };
+  if (await selectedOnHome()) return true;
 
-  if (!(await clickIfShown(page, HOME.accountMenu, 10_000))) return false;
-  await page.waitForTimeout(700);
-  const { head } = shortAddress(address);
-  const rows = page.getByText(new RegExp(head, 'i'));
-  const n = await rows.count().catch(() => 0);
-  for (let i = 0; i < n; i++) {
-    const row = rows.nth(i);
-    const text = (await row.innerText().catch(() => '')) ?? '';
-    if (!matchesShort(text, address)) continue;
-    await row.click({ timeout: 5000 }).catch(() => undefined);
-    await page.waitForTimeout(900);
-    const after = (await page.locator('p').allInnerTexts().catch(() => [])) as string[];
-    return after.some((t) => matchesShort(t, address));
+  await gotoHome(page, '/account-list', 700);
+  await page.getByRole('searchbox').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+  await page.waitForTimeout(400);
+  const lines = (await snapshot()).split('\n').map((l) => l.trim());
+  const at = lines.findIndex((l) => /^- paragraph: 0x/i.test(l) && mentions(l));
+  if (at < 0) return false;
+  let name: string | null = null;
+  for (let j = at - 1; j >= 0 && j >= at - 6; j--) {
+    const m = /^- paragraph: (.+)$/.exec(lines[j] ?? '');
+    if (m && !/^0x/i.test(m[1] ?? '')) {
+      name = m[1] ?? null;
+      break;
+    }
   }
-  await page.keyboard.press('Escape').catch(() => undefined);
-  return false;
+  if (!name) return false;
+  await page.locator(`p:has-text("${name.replace(/"/g, '')}")`).first().click({ timeout: 5000 }).catch(() => undefined);
+  await page.waitForTimeout(1200);
+  return selectedOnHome();
 }
