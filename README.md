@@ -208,6 +208,14 @@ RIG
 
 It answers once, with every step's result and duration. A click watches 250 ms for a wallet window of its own (`--popup-ms` widens it); prompts are reached with `wait --popup`.
 
+7. **Several accounts.** Import each burner once (`mm import-key --key-file <file>`), then switch between them; `mm status` and `mm address` read the selected account from the wallet itself:
+
+```bash
+./bin/rig mm select --address 0x90F79bf6EB2c4f870365E785982E1f101E93b906
+./bin/rig mm status     # { "locked": false, "lockedFrom": "tracked", "address": "0x90F7…", "addressFrom": "wallet", … }
+```
+
+A site stays bound to the account it was connected with: revoke (`wallet_revokePermissions`) and reconnect to act as another one.
 
 ## 🛠️ Available Tools
 
@@ -465,10 +473,14 @@ Optional, for a chain the public registry does not know, or to change defaults:
 | `--explorer` | `RIG_EXPLORER_URL` | Block explorer |
 | `--app-url` | `RIG_APP_URL` | Default app URL |
 | `--key-file` | `RIG_KEY_FILE` | File holding only a burner key |
-| `--headless` | `RIG_HEADLESS=1` | No visible window (untested; extensions in new headless Chromium may work, may not) |
+| `--headless` | `RIG_HEADLESS=1` | No visible window. Proven with MetaMask 13.48 (connect, sign, transact); `"headless": true` in `.rig/config.json` does the same |
 | `--idle-minutes <n>` | `RIG_IDLE_MINUTES=<n>` | Minutes without a command before the daemon closes the browser and exits (default 15; `0` never). The next call relaunches it. |
 | `--allow-mainnet` | `RIG_ALLOW_MAINNET=1` | Permit approvals on real-money chains |
 | | `RIG_PORT` | Daemon port, default 7331 |
+| | `RIG_DIR` | Session directory (profile, vault, daemon record), default `.rig/`. Point it at a copy (`cp -cR .rig/profile …` on APFS) to run destructive tests without touching the shared session |
+| | `RIG_LOW_MEMORY` | `1` or `0` forces Chromium's low-end device mode on or off. By default the shared `.rig` browser always runs at full speed, and a browser on any other profile (`RIG_DIR`) started while another rig browser is running gets low-end mode: ~0.95 GB instead of ~1.2–1.6 GB (MetaMask's process ~850 → ~340 MB), wallet commands 20–40% slower. `status` reports `lowMemory` |
+| | `RIG_CHROME_ARGS` | Extra Chromium flags, space separated |
+| | `RIG_SHOTS_KEEP` | Screenshots kept in `<RIG_DIR>/shots`; older ones are deleted as new ones land (default 200) |
 
 > Give a network in `args` and it is fixed for the session: `rig_network use` will refuse to change it. Give none and choose at runtime.
 
@@ -479,13 +491,21 @@ pnpm check                      # typecheck + unit tests
 pnpm smoke                      # a handful of MCP calls against RIG_APP_URL
 pnpm mcp:loop -- --runs 10      # ten purchases in a row through the MCP tools, verified on chain
 pnpm buy:loop -- --runs 10      # the same through the daemon's HTTP API
+pnpm bench -- --label after     # time each command 9x (median, p90, max) into .rig/bench/
+pnpm bench -- --compare .rig/bench/a.json .rig/bench/b.json
+pnpm e2e -- --app http://localhost:3210 --rpc http://127.0.0.1:8621   # scripts/e2e/*.rig, checked on chain
 ```
+
+`bench` and `e2e` take `--root <checkout>` to run another copy of the rig through the same harness (an older version, say), and `e2e --via mcp` sends the same flows through the MCP server's `rig_run` instead of the CLI. With `RIG_DIR` and `RIG_PORT` set, both run on a disposable profile beside the shared daemon.
+
+`./bin/rig` runs a bundle (`dist/cli.mjs`, built by `pnpm build`): the tsx loader cost ~50 ms on every call. The bundle checks on start whether `src/` is newer and rebuilds itself first, so an edit never runs stale code.
 
 The loops restart the browser between runs and clear the site's session, so every run exercises connect, signature and trade from cold. `./bin/rig` is the CLI (`./bin/rig` still works as an alias).
 
 ## 🐛 Traps Already Handled
 
-- **MetaMask never raises a usable approval window under automation.** With any extension page open it suppresses the popup; with none open it opens its home page, showing the wallet rather than the request. The queue is only reachable at `notification.html`, which the rig opens itself and reloads on every poll.
+- **MetaMask never raises a usable approval window under automation.** With any extension page open it suppresses the popup; with none open it opens its home page, showing the wallet rather than the request. The queue is only reachable at `notification.html`, which the rig opens itself.
+- **Fixed sleeps were most of every wallet command.** The rig reads MetaMask's own state instead: on a wallet page, `stateHooks.getCleanAppState()` (pending requests, locked or not, selected account) through raw CDP, since LavaMoat blocks Playwright's `evaluate` there; with no wallet page, `stateHooks.getPersistedState()` in the service worker (selected account, accounts, auto-lock). Only addresses, counts and flags are read out, never the vault. `wait --popup` asks the open route whether a request is queued instead of reloading it, approve waits for the queue to shrink instead of sleeping, and `mm status`/`mm address` need no tab at all.
 - **A forgotten daemon is a Chromium eating gigabytes for nothing.** Headless, it is invisible too. The daemon times itself out after 15 idle minutes (`--idle-minutes`, `RIG_IDLE_MINUTES`; `0` disables), counting only commands, not liveness probes, and never while a command is still running. `status` reports `idleSec` and `idleLimitMinutes`.
 - **The browser must not close straight after an approval.** Extension state is written asynchronously, so shutting down too fast loses the permission, network or account just granted.
 - **Two daemons must never share the profile.** The daemon claims `.rig/daemon.json` the moment it listens, flagged `booting`, and flags it `stopping` on the way out; every launcher waits on those states instead of starting a twin, and a daemon only ever removes its own record. If the browser is closed from outside, the daemon exits and the next call relaunches it.
