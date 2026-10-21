@@ -41,6 +41,12 @@ mm connect / request run in the site under test: open it (goto) first.
 `;
 
 
+// A reader that stops early (`| head`) closes the pipe; that is not an error worth a stack trace.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(0);
+  throw err;
+});
+
 function out(value: unknown): void {
   process.stdout.write(JSON.stringify(value) + '\n');
 }
