@@ -15,7 +15,7 @@ import { classify, currentPage, livePages, resolveTarget } from '../daemon/brows
 import { config } from '../config.js';
 import { errMessage, newReqId, sleep } from '../util.js';
 import { approve, drain } from './act.js';
-import { closeNotification, ensureNotification, hasPending, reloadNotification } from './notification.js';
+import { awaitRequest, closeNotification } from './notification.js';
 
 /** The page under test, if one is open: the active one, else the newest. Never opens. */
 export function existingAppPage(): Page | null {
@@ -118,7 +118,7 @@ export async function settle(page: Page, reqId: string, timeoutMs = 20_000): Pro
   while (Date.now() < deadline) {
     const r = await readBridgeSlot(page, reqId);
     if (r.done || ('navigated' in r && r.navigated)) return r;
-    await sleep(250);
+    await sleep(50);
   }
   return { done: false, timeout: true };
 }
@@ -133,16 +133,15 @@ function finished(r: BridgeResult): boolean {
  * estimation and simulation happen first), so keep looking rather than sample.
  */
 async function waitForPrompt(page: Page, reqId: string, timeoutMs: number): Promise<{ pending: boolean; early?: BridgeResult }> {
-  const deadline = Date.now() + timeoutMs;
-  let notif = await ensureNotification();
-  while (Date.now() < deadline) {
-    if (await hasPending(notif)) return { pending: true };
-    const early = await readBridgeSlot(page, reqId);
-    if (finished(early)) return { pending: false, early };
-    await reloadNotification(notif);
-    notif = await ensureNotification();
-  }
-  return { pending: false };
+  let early: BridgeResult | undefined;
+  const found = await awaitRequest(timeoutMs, async () => {
+    const r = await readBridgeSlot(page, reqId);
+    if (!finished(r)) return false;
+    early = r;
+    return true;
+  });
+  if (found) return { pending: true };
+  return early ? { pending: false, early } : { pending: false };
 }
 
 export interface ProviderCallResult extends Record<string, unknown> {
@@ -167,11 +166,13 @@ export async function requestWithApproval(
   const origin = pageOrigin(page);
   const reqId = await request(page, method, params);
 
-  // Some calls need no approval (already connected, read-only): let them settle.
-  for (let i = 0; i < 6; i++) {
+  // Some calls need no approval (already connected, read-only) and settle
+  // within milliseconds; look briefly before opening the wallet's route. A
+  // slower one is still caught: the wait below checks the bridge every poll.
+  for (let i = 0; i < 8; i++) {
     const early = await readBridgeSlot(page, reqId);
     if (finished(early)) return { reqId, origin, ...early, popups: [] };
-    await sleep(300);
+    await sleep(50);
   }
 
   const waited = await waitForPrompt(page, reqId, Math.min(timeoutMs, 15_000));

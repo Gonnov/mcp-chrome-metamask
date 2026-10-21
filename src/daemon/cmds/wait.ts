@@ -2,8 +2,7 @@
 import { RigError, type Args, type CmdResult } from '../../types.js';
 import { bool, num, str } from '../../args.js';
 import { pageId, popupPages, setActive } from '../browser.js';
-import { ensureNotification, reloadNotification } from '../../metamask/notification.js';
-import { readPrompt } from '../../metamask/prompt.js';
+import { awaitRequest } from '../../metamask/notification.js';
 import { sleep } from '../../util.js';
 import { target } from './nav.js';
 
@@ -14,30 +13,17 @@ const waitMs: Waiter = async (args, started) => {
   return { ok: true, elapsedMs: Date.now() - started };
 };
 
-/**
- * The rig opens the approval route itself, then polls until a request shows.
- * The route must be reloaded each poll: a notification page that opened with
- * an empty queue stays blank when a request arrives afterwards.
- */
+/** The rig opens the approval route itself, then watches it until a request shows. */
 const waitPopup: Waiter = async (_args, started, timeout) => {
-  const deadline = started + timeout;
-  let first = true;
-  while (Date.now() < deadline) {
-    const page = await ensureNotification();
-    if (!first) await reloadNotification(page);
-    first = false;
-    const prompt = await readPrompt(page);
-    if (prompt.kind !== 'unknown') {
-      setActive(page);
-      return {
-        ok: true,
-        elapsedMs: Date.now() - started,
-        popup: { id: pageId(page), url: page.url(), kind: prompt.kind, network: prompt.network, origin: prompt.origin },
-      };
-    }
-    await sleep(700);
-  }
-  return { ok: false, reason: 'no pending request', elapsedMs: Date.now() - started };
+  const found = await awaitRequest(Math.max(0, started + timeout - Date.now()));
+  if (!found) return { ok: false, reason: 'no pending request', elapsedMs: Date.now() - started };
+  const { page, prompt } = found;
+  setActive(page);
+  return {
+    ok: true,
+    elapsedMs: Date.now() - started,
+    popup: { id: pageId(page), url: page.url(), kind: prompt.kind, network: prompt.network, origin: prompt.origin },
+  };
 };
 
 const waitPopupGone: Waiter = async (_args, started, timeout) => {
