@@ -318,7 +318,11 @@ export async function selectAccount(page: Page, address: string): Promise<boolea
   if (await selectedOnHome()) return true;
 
   await gotoHome(page, '/account-list', 700);
-  await page.getByRole('searchbox').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+  const search = page.getByRole('searchbox').first();
+  await search.waitFor({ timeout: 10_000 }).catch(() => undefined);
+  // The list is virtualized: with many accounts the target row is not rendered
+  // until the search narrows it down.
+  await search.fill(address).catch(() => undefined);
   await page.waitForTimeout(400);
   const lines = (await snapshot()).split('\n').map((l) => l.trim());
   const at = lines.findIndex((l) => /^- paragraph: 0x/i.test(l) && mentions(l));

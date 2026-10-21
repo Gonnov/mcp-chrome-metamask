@@ -20,7 +20,7 @@ const HELP = `rig - drive a real Chrome with a real MetaMask
   mm fetch [--from-brave] [--version 13.48.0]
   mm setup [--pkey 0x.. | --key-file p] [--dry] [--no-import]
   mm status | address | unlock | approve [--all] [--force] | reject [--all] | pending | popups | home
-  mm connect | add-network | import-key [--pkey 0x.. | --key-file p]
+  mm connect | add-network | import-key [--pkey 0x.. | --key-file p] | select --address 0x..
   mm request <method> [--params '[]']
   chain info | balance [addr] | snapshot | revert <id> | fund [addr] [--amount N] | mine [--blocks N]
   network list | current | use --chain-id N --rpc-url U [--name] [--symbol]
