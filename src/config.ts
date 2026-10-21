@@ -105,11 +105,11 @@ function toNetwork(raw: unknown): NetworkConfig | null {
 }
 
 /** The persisted layer, shape-checked: a hand-edited file cannot smuggle in bad types. */
-export function readConfigFile(): RigConfig {
-  if (!existsSync(CONFIG_FILE)) return {};
+export function readConfigFile(file = CONFIG_FILE): RigConfig {
+  if (!existsSync(file)) return {};
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+    raw = JSON.parse(readFileSync(file, 'utf8'));
   } catch {
     return {};
   }
@@ -121,7 +121,8 @@ export function readConfigFile(): RigConfig {
   const appUrl = optStr(r['appUrl']);
   if (appUrl) out.appUrl = appUrl;
   if (r['headless'] === true) out.headless = true;
-  if (r['allowMainnet'] === true) out.allowMainnet = true;
+  // allowMainnet is deliberately not read here: this file is agent-writable,
+  // and only the operator (argv or env) may switch the real-money gate off.
   const keyFile = optStr(r['privateKeyFile']);
   if (keyFile) out.privateKeyFile = keyFile;
   // A bad value in the agent-writable file is dropped, never fatal.

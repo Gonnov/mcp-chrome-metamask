@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { classify, parseChainId, primeRegistry, isLocalRpc, KNOWN_MAINNETS } from '../src/chains.js';
-import { DEFAULT_IDLE_MINUTES, idleExpired, launchArgsToArgv, parseIdleMinutes, parseLaunchArgs } from '../src/config.js';
+import { DEFAULT_IDLE_MINUTES, idleExpired, launchArgsToArgv, parseIdleMinutes, parseLaunchArgs, readConfigFile } from '../src/config.js';
 import { toHexChainId } from '../src/metamask/network.js';
 import { assertVersion, VERSION_RE } from '../src/metamask/fetch.js';
 import { hostAllowed } from '../src/daemon/server.js';
@@ -512,4 +512,17 @@ test('toUiFacts: missing or odd fields read as the safe answer (locked, nothing 
   });
   assert.deepEqual(toUiFacts({ pending: 'many', unlocked: 'yes' }), { pending: 0, unlocked: false, onboarded: false, selected: null });
   assert.equal(toUiFacts(null), null);
+});
+
+test('readConfigFile: the agent-writable file cannot switch the mainnet gate off', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rig-cfg-'));
+  try {
+    const file = join(dir, 'config.json');
+    writeFileSync(file, JSON.stringify({ allowMainnet: true, headless: true }));
+    const cfg = readConfigFile(file);
+    assert.equal(cfg.allowMainnet, undefined);
+    assert.equal(cfg.headless, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
