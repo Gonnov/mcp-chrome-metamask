@@ -1,5 +1,5 @@
 /**
- * The MCP tool surface: eight tools, each taking an `action`. This literal is
+ * The MCP tool surface: nine tools; all but rig_run take an `action`. This literal is
  * the public contract; handlers live in src/mcp.ts.
  */
 const TARGET = {
@@ -184,6 +184,20 @@ export const tools = [
       },
     },
   },
+  {
+    name: 'rig_run',
+    description:
+      'Run several rig commands in one call, in order, stopping at the first failure (a thrown error, or a wait that answered ok: false). Cuts round trips: goto, click, wait for the wallet prompt, approve and check can be one call. Steps use the daemon command names and CLI flag names, not the other tools\' argument names: {"cmd":"goto","url":"…"}, {"cmd":"click","text":"Buy"}, {"cmd":"type","value":"0.05","sel":"input"}, {"cmd":"wait","popup":true,"timeout":30000}, {"cmd":"mm.approve","all":true}, {"cmd":"wait","text":"Bought"}, {"cmd":"mm.select","address":"0x…"}, {"cmd":"eval","value":"document.title"}. Add "optional": true to a step whose failure should not stop the run. Each step reports its result and ms. The whole run must finish within 5 minutes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        steps: {
+          type: 'array',
+          description: 'Steps in order: each { cmd, optional?, ...args }.',
+          items: { type: 'object' },
+        },
+      },
+      required: ['steps'],
+    },
+  },
 ];
-
-

@@ -85,7 +85,7 @@ daemon record. It is gitignored and mode 0700.
 ## 🤖 For an Agent
 
 The server speaks MCP over stdio. Register it with your client, then drive it
-with the eight `rig_*` tools. Every tool takes an `action`, and unknown
+with the nine `rig_*` tools. Every tool but `rig_run` takes an `action`, and unknown
 arguments are refused rather than dropped.
 
 ### 1. Register the server
@@ -194,9 +194,24 @@ The same engine from the shell. `./bin/rig` is the CLI (`./bin/dapp` still works
 
 `./bin/rig --help` lists every command. Each takes `--target <app|popup|mm|active|id>`.
 
+6. **Or do it in one call.** A run script is one rig command per line, as on the command line; `#` comments, a leading `?` marks a step whose failure does not stop the run:
+
+```bash
+cat > buy.rig <<'RIG'
+goto http://localhost:3000
+click --text "Connect Wallet"
+wait --popup --timeout 30000
+mm approve --all
+RIG
+./bin/rig run buy.rig        # or: ./bin/rig run - < buy.rig, or --steps '<json>'
+```
+
+It answers once, with every step's result and duration. A click watches 250 ms for a wallet window of its own (`--popup-ms` widens it); prompts are reached with `wait --popup`.
+
+
 ## 🛠️ Available Tools
 
-Eight tools, each taking an `action`. 44 actions in total.
+Nine tools: eight taking an `action` (44 actions in total), plus `rig_run`.
 
 <details>
 <summary><strong>🖥️ Session (5 actions)</strong></summary>
@@ -283,6 +298,12 @@ tool exposes, so the override is kept off the tool surface.
 
 - `rig_eval eval` - Run JavaScript in a page, optionally without awaiting it
 - `rig_eval result` - Read the outcome of a call that opened a wallet prompt
+</details>
+
+<details>
+<summary><strong>⏩ Runs (rig_run)</strong></summary>
+
+- `rig_run` - Several commands in one call, in order, stopping at the first failure (a thrown error, or a wait that answered `ok: false`); a step with `"optional": true` is reported and the run goes on. Steps use the daemon command names and CLI flag names: `{"cmd":"click","text":"Buy"}`, `{"cmd":"wait","popup":true}`, `{"cmd":"mm.approve","all":true}`. `network.allow`, `force` and `pkey` are refused, as on every other tool. A run must finish within 5 minutes.
 </details>
 
 ## 🔑 The Burner Key

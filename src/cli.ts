@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ensureDirs, readDaemon } from './daemon/state.js';
 import { daemonSpawnArgs, ensureDaemon } from './launcher.js';
+import { parseScript } from './script.js';
 
 const HELP = `rig - drive a real Chrome with a real MetaMask
 
@@ -25,6 +27,12 @@ const HELP = `rig - drive a real Chrome with a real MetaMask
   chain info | balance [addr] | snapshot | revert <id> | fund [addr] [--amount N] | mine [--blocks N]
   network list | current | use --chain-id N --rpc-url U [--name] [--symbol]
   network allow <chainId> | disallow <chainId>   (operator only: vouch for a chain the classifier cannot place)
+  run <file | -> | run --steps '<json>'           several commands in one call, stopping at the first failure
+
+A run script is one rig command per line, written as on this command line
+without "./bin/rig"; # starts a comment, a leading "?" marks a step whose
+failure is reported but does not stop the run. A file starting with "[" is
+read as JSON steps instead: [{"cmd":"click","text":"Buy"},{"cmd":"mm.approve","all":true}].
 
 Every command takes --target <app|popup|mm|active|id>.
 mm connect / request run in the site under test: open it (goto) first.
@@ -137,38 +145,60 @@ async function send(cmd: string, args: Record<string, unknown>): Promise<void> {
   out(body);
 }
 
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: process.argv.slice(2),
-    options,
-    allowPositionals: true,
-    strict: false,
-  });
+interface Command {
+  cmd: string;
+  args: Record<string, unknown>;
+}
 
-  const cmd = positionals[0];
-  if (!cmd || values['help']) {
-    process.stdout.write(HELP);
-    return;
-  }
-
+/** argv (without the program) to the daemon's command name and argument bag. */
+function toCommand(argv: string[]): Command {
+  const { values, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: false });
   const args: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(values)) if (v !== undefined) args[k] = v;
-
-  if (cmd === 'serve') {
-    await startDaemon(values['headless'] === true, values['daemon'] === true);
-    return;
-  }
-
+  const cmd = positionals[0] ?? '';
   // Sub-commanded groups keep their own verb, e.g. `mm approve` -> `mm.approve`.
   if (cmd === 'mm' || cmd === 'chain' || cmd === 'network') {
     const sub = positionals[1];
     if (!sub) fail({ error: `${cmd} needs a subcommand`, code: 'BAD_ARGS' });
     if (positionals[2] !== undefined) args['value'] = positionals[2];
-    await send(`${cmd}.${sub}`, args);
+    return { cmd: `${cmd}.${sub}`, args };
+  }
+  if (positionals[1] !== undefined) args['value'] = positionals[1];
+  return { cmd, args };
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const { values, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: false });
+
+  if (!positionals[0] || values['help']) {
+    process.stdout.write(HELP);
     return;
   }
 
-  if (positionals[1] !== undefined) args['value'] = positionals[1];
+  if (positionals[0] === 'serve') {
+    await startDaemon(values['headless'] === true, values['daemon'] === true);
+    return;
+  }
+
+  if (positionals[0] === 'run') {
+    const inline = values['steps'];
+    const file = positionals[1];
+    let source: string;
+    if (typeof inline === 'string') source = inline;
+    else if (file) source = readFileSync(file === '-' ? 0 : file, 'utf8');
+    else fail({ error: 'run needs a script file, - for stdin, or --steps', code: 'BAD_ARGS' });
+    let steps: unknown[];
+    try {
+      steps = parseScript(source, toCommand);
+    } catch (err) {
+      fail({ error: `bad run script: ${(err as Error).message}`, code: 'BAD_ARGS' });
+    }
+    await send('run', { steps });
+    return;
+  }
+
+  const { cmd, args } = toCommand(argv);
   await send(cmd, args);
 }
 

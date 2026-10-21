@@ -25,6 +25,8 @@ import { formatNative, toWeiHex } from '../src/chain.js';
 import { similarity } from '../src/ocr.js';
 import { shortAddress } from '../src/metamask/onboard.js';
 import { matchKnown } from '../src/metamask/account.js';
+import { parseScript, splitWords } from '../src/script.js';
+import { parseSteps } from '../src/daemon/dispatch.js';
 import { RigError } from '../src/types.js';
 
 // ---- chain id parsing ---------------------------------------------------------
@@ -421,4 +423,33 @@ test('matchKnown resolves a truncated address against known accounts', () => {
   assert.equal(matchKnown('0x123456...12345678', [undefined]), null);
   assert.equal(matchKnown('Account 1', [full]), null);
   assert.equal(matchKnown('0x123456...12345678', ['0x12']), null);
+});
+
+test('splitWords groups quotes and escapes like a shell', () => {
+  assert.deepEqual(splitWords('click --text "Connect Wallet"'), ['click', '--text', 'Connect Wallet']);
+  assert.deepEqual(splitWords(`eval 'document.querySelector("a").href'`), ['eval', 'document.querySelector("a").href']);
+  assert.deepEqual(splitWords('type "say \\"hi\\"" --sel input'), ['type', 'say "hi"', '--sel', 'input']);
+  assert.deepEqual(splitWords('type ""'), ['type', '']);
+  assert.throws(() => splitWords('click --text "open'));
+});
+
+test('parseScript: one command per line, comments skipped, ? marks optional, JSON passes through', () => {
+  const toCommand = (argv: string[]) => ({ cmd: argv[0] ?? '', args: argv.length > 1 ? { rest: argv.slice(1) } : {} });
+  const steps = parseScript('# connect\n./bin/rig goto http://x\n\n? wait --popup\n', toCommand);
+  assert.deepEqual(steps, [
+    { cmd: 'goto', rest: ['http://x'] },
+    { cmd: 'wait', rest: ['--popup'], optional: true },
+  ]);
+  assert.deepEqual(parseScript(' [{"cmd":"aria"}]', toCommand), [{ cmd: 'aria' }]);
+});
+
+test('parseSteps: needs a cmd per step and refuses run, stop and boot inside a run', () => {
+  assert.deepEqual(parseSteps([{ cmd: 'click', text: 'Buy', optional: true }]), [
+    { cmd: 'click', args: { text: 'Buy' }, optional: true },
+  ]);
+  assert.throws(() => parseSteps([]), /non-empty/);
+  assert.throws(() => parseSteps([{ text: 'Buy' }]), /no cmd/);
+  assert.throws(() => parseSteps([{ cmd: 'stop' }]), /cannot run inside a run/);
+  assert.throws(() => parseSteps([{ cmd: 'run', steps: [] }]), /cannot run inside a run/);
+  assert.throws(() => parseSteps(['click']), /not an object/);
 });

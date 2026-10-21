@@ -215,7 +215,29 @@ async function network(a: Args): Promise<CallToolResult> {
   return text(await callDaemon(`network.${action}`, args));
 }
 
+/**
+ * A run goes straight to the daemon, so it must not reach what the other tools
+ * keep from the agent: vouching for a chain, forcing an approval past the gate,
+ * or a raw private key on the wire.
+ */
+async function runTool(a: Args): Promise<CallToolResult> {
+  const steps = a['steps'];
+  if (!Array.isArray(steps)) throw new DaemonError('BAD_ARGS', 'rig_run needs a steps array');
+  for (const [i, step] of steps.entries()) {
+    const s = (step ?? {}) as Args;
+    const cmd = str(s, 'cmd') ?? '';
+    if (cmd === 'network.allow' || cmd === 'network.disallow') {
+      throw new DaemonError('OPERATOR_ONLY', `step ${i}: vouching for a chain is an operator action; run "./bin/rig network allow <chainId>" from a shell.`);
+    }
+    if (s['force'] !== undefined || s['pkey'] !== undefined) {
+      throw new DaemonError('OPERATOR_ONLY', `step ${i}: force and pkey are operator-only; the MCP tools never pass them.`);
+    }
+  }
+  return text(await callDaemon('run', { steps }));
+}
+
 const handlers: Record<string, (a: Args) => Promise<CallToolResult>> = {
+  rig_run: runTool,
   rig_network: network,
   rig_session: session,
   rig_navigate: navigate,
