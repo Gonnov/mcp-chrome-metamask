@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { ensureDirs, readDaemon } from './daemon/state.js';
 import { daemonSpawnArgs, ensureDaemon } from './launcher.js';
 import { parseScript } from './script.js';
+import { options, toCommand } from './argv.js';
 
 const HELP = `rig - drive a real Chrome with a real MetaMask
 
@@ -39,64 +40,6 @@ mm connect / request run in the site under test: open it (goto) first.
 --force and network allow exist only here, on the operator's shell; the MCP tools never expose them.
 `;
 
-const options = {
-  target: { type: 'string' },
-  out: { type: 'string' },
-  sel: { type: 'string' },
-  role: { type: 'string' },
-  name: { type: 'string' },
-  text: { type: 'string' },
-  id: { type: 'string' },
-  xy: { type: 'string' },
-  url: { type: 'string' },
-  key: { type: 'string' },
-  version: { type: 'string' },
-  params: { type: 'string' },
-  'env-file': { type: 'string' },
-  'chain_id': { type: 'string' },
-  'rpc_url': { type: 'string' },
-  'chain-id': { type: 'string' },
-  'rpc-url': { type: 'string' },
-  symbol: { type: 'string' },
-  explorer: { type: 'string' },
-  'key-file': { type: 'string' },
-  pkey: { type: 'string' },
-  var: { type: 'string' },
-  address: { type: 'string' },
-  ms: { type: 'string' },
-  dy: { type: 'string' },
-  dx: { type: 'string' },
-  nth: { type: 'string' },
-  fuzzy: { type: 'string' },
-  grid: { type: 'string' },
-  psm: { type: 'string' },
-  'min-conf': { type: 'string' },
-  'popup-ms': { type: 'string' },
-  steps: { type: 'string' },
-  timeout: { type: 'string' },
-  doge: { type: 'string' },
-  amount: { type: 'string' },
-  blocks: { type: 'string' },
-  delay: { type: 'string' },
-  annotate: { type: 'boolean' },
-  full: { type: 'boolean' },
-  fire: { type: 'boolean' },
-  popup: { type: 'boolean' },
-  'popup-gone': { type: 'boolean' },
-  all: { type: 'boolean' },
-  dry: { type: 'boolean' },
-  force: { type: 'boolean' },
-  headless: { type: 'boolean' },
-  daemon: { type: 'boolean' },
-  'from-brave': { type: 'boolean' },
-  'no-import': { type: 'boolean' },
-  clear: { type: 'boolean' },
-  keep: { type: 'boolean' },
-  n: { type: 'string' },
-  width: { type: 'string' },
-  height: { type: 'string' },
-  help: { type: 'boolean' },
-} as const;
 
 function out(value: unknown): void {
   process.stdout.write(JSON.stringify(value) + '\n');
@@ -145,28 +88,6 @@ async function send(cmd: string, args: Record<string, unknown>): Promise<void> {
   out(body);
 }
 
-interface Command {
-  cmd: string;
-  args: Record<string, unknown>;
-}
-
-/** argv (without the program) to the daemon's command name and argument bag. */
-function toCommand(argv: string[]): Command {
-  const { values, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: false });
-  const args: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(values)) if (v !== undefined) args[k] = v;
-  const cmd = positionals[0] ?? '';
-  // Sub-commanded groups keep their own verb, e.g. `mm approve` -> `mm.approve`.
-  if (cmd === 'mm' || cmd === 'chain' || cmd === 'network') {
-    const sub = positionals[1];
-    if (!sub) fail({ error: `${cmd} needs a subcommand`, code: 'BAD_ARGS' });
-    if (positionals[2] !== undefined) args['value'] = positionals[2];
-    return { cmd: `${cmd}.${sub}`, args };
-  }
-  if (positionals[1] !== undefined) args['value'] = positionals[1];
-  return { cmd, args };
-}
-
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const { values, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: false });
@@ -198,8 +119,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { cmd, args } = toCommand(argv);
-  await send(cmd, args);
+  let command: { cmd: string; args: Record<string, unknown> };
+  try {
+    command = toCommand(argv);
+  } catch (err) {
+    fail({ error: (err as Error).message, code: 'BAD_ARGS' });
+  }
+  await send(command.cmd, command.args);
 }
 
 main().catch((err: Error) => fail({ error: err.message, code: 'CLI' }));
