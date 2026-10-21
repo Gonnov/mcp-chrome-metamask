@@ -10,13 +10,16 @@ export function homeUrl(page: Page, route = '/'): string {
   return `${u.protocol}//${u.host}/home.html#${route}`;
 }
 
-/** Navigate a wallet page to a home route and let it render. */
-export async function gotoHome(page: Page, route = '/', settleMs = 700): Promise<boolean> {
+/**
+ * Navigate a wallet page to a home route. `settleMs` is a fixed pause after
+ * the load; callers that wait for their own element pass 0.
+ */
+export async function gotoHome(page: Page, route = '/', settleMs = 0): Promise<boolean> {
   const ok = await page
     .goto(homeUrl(page, route), { waitUntil: 'domcontentloaded' })
     .then(() => true)
     .catch(() => false);
-  await page.waitForTimeout(settleMs);
+  if (settleMs > 0) await page.waitForTimeout(settleMs);
   return ok;
 }
 
@@ -30,14 +33,15 @@ export async function gotoHome(page: Page, route = '/', settleMs = 700): Promise
 export async function withHome<T>(
   getHome: () => Promise<Page>,
   fn: (home: Page) => Promise<T>,
-  opts: { keep?: boolean } = {},
+  opts: { keep?: boolean; unlock?: boolean } = {},
 ): Promise<T> {
   const focus = currentPage();
   const refocus = focus && !focus.isClosed() && classify(focus) === 'app' ? focus : null;
   const before = new Set(livePages());
   const home = await getHome();
   const opened = !before.has(home);
-  await ensureUnlocked(home);
+  // A read-only look (is it locked?) must not change what it looks at.
+  if (opts.unlock !== false) await ensureUnlocked(home);
   try {
     return await fn(home);
   } finally {

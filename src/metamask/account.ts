@@ -8,12 +8,19 @@ import { dismissNags } from './onboard.js';
 import { ACCOUNT } from './selectors.js';
 import { clickIfShown } from './dom.js';
 import { gotoHome, withHome } from './ui.js';
+import { walletFacts } from './background.js';
 
 export interface AddressRead {
   address?: string;
   addressShort?: string;
-  source: 'qr' | 'text' | 'known' | 'short' | 'none';
+  source: 'wallet' | 'qr' | 'text' | 'known' | 'short' | 'none';
   note?: string;
+}
+
+/** EIP-55 form of an address. viem is loaded on first use only: the daemon rarely needs it. */
+export async function checksum(address: string): Promise<string> {
+  const { getAddress } = await import('viem');
+  return getAddress(address);
 }
 
 const FULL = /^0x[0-9a-fA-F]{40}$/;
@@ -52,6 +59,13 @@ export function matchKnown(short: string, known: (string | undefined)[]): string
  * that disagrees with the header is dropped.
  */
 export async function readAddress(getHome: () => Promise<Page>, opts: { keep?: boolean } = {}): Promise<AddressRead> {
+  // The wallet's own state names the selected account in full, without a tab.
+  const facts = await walletFacts();
+  if (facts?.selected) {
+    const address = await checksum(facts.selected);
+    if (readState().walletAddress !== address) writeState({ walletAddress: address });
+    return { address, source: 'wallet' };
+  }
   return withHome(getHome, async (home) => {
     // No fixed settle: the header read below waits for the page to render it.
     await gotoHome(home, '/', 0);

@@ -90,7 +90,8 @@ export async function status(): Promise<CmdResult> {
     metamask: { version: state.metamaskVersion, source: state.metamaskSource },
     onboarded: state.onboarded ?? false,
     importedAddress: state.importedAddress,
-    walletAddress: state.importedAddress ?? state.walletAddress,
+    // The selected account as last read from the wallet; the last import is only a fallback.
+    walletAddress: state.walletAddress ?? state.importedAddress,
   };
   try {
     out['pages'] = await listPages();

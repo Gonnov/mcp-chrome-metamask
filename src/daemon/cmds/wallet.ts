@@ -1,21 +1,24 @@
 /** mm.* commands: everything that drives MetaMask. */
 import { privateKeyToAccount } from 'viem/accounts';
 import { RigError, type Args, type CmdResult } from '../../types.js';
+import { sleep } from '../../util.js';
 import { bool, str } from '../../args.js';
 import { popupPages } from '../browser.js';
-import { env, readState } from '../state.js';
+import { env, readState, writeState } from '../state.js';
 import { config } from '../../config.js';
 import { DEFAULT_MM_VERSION, assertVersion, fetchAuto, fetchFromBrowser, fetchFromGithub } from '../../metamask/fetch.js';
 import { closeNotification, ensureNotification, listPopups } from '../../metamask/notification.js';
 import { readPrompt } from '../../metamask/prompt.js';
 import { approve, drain, reject } from '../../metamask/act.js';
-import { ensureUnlocked, unlockAnywhere } from '../../metamask/unlock.js';
+import { ensureUnlocked, lastLockState, noteLockState, unlockAnywhere } from '../../metamask/unlock.js';
 import { findPrivateKey, importKey, onboard, readPrivateKey, selectAccount } from '../../metamask/onboard.js';
 import { ethAccounts, ethChainIdHex, existingAppPage, pageOrigin, providerPage, requestWithApproval } from '../../metamask/provider.js';
-import { readAddress } from '../../metamask/account.js';
-import { gotoHome, withHome } from '../../metamask/ui.js';
+import { checksum, readAddress } from '../../metamask/account.js';
+import { withHome } from '../../metamask/ui.js';
+import { walletFacts } from '../../metamask/background.js';
+import { uiFacts, waitUiFacts } from '../../metamask/uistate.js';
 import { shown } from '../../metamask/dom.js';
-import { HOME, UNLOCK } from '../../metamask/selectors.js';
+import { UNLOCK } from '../../metamask/selectors.js';
 import { chainGate } from '../gate.js';
 import { mmHomePage } from './session.js';
 import { addNetworkHere, hasNetworkSpec, networkSpec } from './network.js';
@@ -97,36 +100,55 @@ async function rejectCmd(args: Args): Promise<CmdResult> {
   return { ...result };
 }
 
+/**
+ * Whether the wallet is locked, as cheaply as can be told truthfully: an open
+ * request page says so itself; otherwise the last state the rig saw holds
+ * while MetaMask's auto-lock cannot have fired since (it is off by default);
+ * otherwise home is opened briefly and looked at, without unlocking it.
+ */
+async function lockedNow(autoLockMinutes: number | null, keep: boolean): Promise<{ locked: boolean; lockedFrom: string }> {
+  const openPopup = popupPages().at(-1);
+  const fromPopup = openPopup ? await uiFacts(openPopup) : null;
+  if (fromPopup) return { locked: !fromPopup.unlocked, lockedFrom: 'popup' };
+  const seen = lastLockState();
+  const fresh = autoLockMinutes === 0 || (autoLockMinutes !== null && seen !== null && Date.now() - seen.at < autoLockMinutes * 60_000);
+  if (seen && fresh) return { locked: !seen.unlocked, lockedFrom: 'tracked' };
+  const locked = await withHome(
+    mmHomePage,
+    async (home) => {
+      const facts = await waitUiFacts(home, 5000);
+      if (facts) noteLockState(facts.unlocked);
+      return facts ? !facts.unlocked : shown(home, UNLOCK.password, 800);
+    },
+    { keep, unlock: false },
+  );
+  return { locked, lockedFrom: 'home' };
+}
+
 async function statusCmd(args: Args): Promise<CmdResult> {
   const state = readState();
-  const keep = bool(args, 'keep');
-  // Locked or not is only visible on the wallet's own pages. A pending
-  // notification page already says; otherwise home is opened briefly.
-  const openPopup = popupPages().at(-1);
-  let locked: boolean;
-  let read: Awaited<ReturnType<typeof readAddress>> | null = null;
-  if (openPopup) {
-    locked = (await readPrompt(openPopup)).kind === 'unlock';
-  } else {
-    locked = await withHome(mmHomePage, (home) => shown(home, UNLOCK.password, 800), { keep });
-    if (!state.importedAddress && !state.walletAddress) {
-      read = await readAddress(mmHomePage, { keep }).catch(() => null);
-    }
-  }
+  const facts = await walletFacts();
+  const { locked, lockedFrom } = await lockedNow(facts?.autoLockMinutes ?? null, bool(args, 'keep'));
+  // The wallet's own record of the selected account; the state file is only
+  // a fallback, and is corrected when it disagrees.
+  const selected = facts?.selected ? await checksum(facts.selected) : undefined;
+  if (selected && state.walletAddress !== selected) writeState({ walletAddress: selected });
   // What the site under test sees, when one is open.
   const page = existingAppPage();
-  const address = state.importedAddress ?? state.walletAddress ?? read?.address;
+  const address = selected ?? state.walletAddress ?? state.importedAddress;
   return {
     locked,
+    lockedFrom,
     provider: page ? 'app' : 'none',
     ...(page ? { origin: pageOrigin(page) } : {}),
     accounts: page ? await ethAccounts(page) : [],
     chainId: page ? await ethChainIdHex(page) : null,
     address,
-    ...(read?.addressShort && !address ? { addressShort: read.addressShort, note: read.note } : {}),
+    addressFrom: selected ? 'wallet' : 'state',
+    ...(facts ? { walletAccounts: facts.accounts.length } : {}),
     onboarded: state.onboarded ?? false,
     importedAddress: state.importedAddress,
-    walletAddress: state.walletAddress,
+    walletAddress: selected ?? state.walletAddress,
     popups: await listPopups(),
   };
 }
@@ -233,23 +255,20 @@ const commands: Record<string, (args: Args) => Promise<CmdResult>> = {
   // imported once; a second proof run on the same profile must switch instead).
   async select(args) {
     const address = str(args, 'address') ?? str(args, 'value');
-    if (!address) throw new RigError('BAD_ARGS', 'mm select needs --address 0x…');
-    const page = await mmHomePage();
-    await page.bringToFront().catch(() => undefined);
-    await ensureUnlocked(page);
-    const selected = await selectAccount(page, address);
-    if (!selected && bool(args, 'debug')) {
-      await gotoHome(page, '/account-list', 700);
-      const cells = await page.locator(HOME.accountCell).allInnerTexts().catch(() => []);
-      await page.getByRole('searchbox').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
-      await page.waitForTimeout(1500);
-      const anyCells = await page.locator('[data-testid]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid'))).catch(() => []);
-      const texts = await page.locator('p').allInnerTexts().catch(() => []);
-      return { address, selected, url: page.url(), cells, testIds: [...new Set(anyCells)].slice(0, 80), texts: texts.slice(0, 30) };
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) throw new RigError('BAD_ARGS', 'mm select needs --address 0x… (40 hex digits)');
+    // Done on the wallet's home page, closed again afterwards like every
+    // other look at it: an extension page left open suppresses prompts.
+    const selected = await withHome(mmHomePage, (home) => selectAccount(home, address));
+    // `active` is the wallet's own answer after the switch, so the caller can
+    // see at once whether it took, instead of trusting `selected`.
+    // The worker persists the switch a moment after the page shows it; wait
+    // for that too, so a stop right after cannot lose it.
+    let read = await readAddress(mmHomePage);
+    for (let deadline = Date.now() + 5000; selected && read.source === 'wallet' && Date.now() < deadline; ) {
+      if (read.address?.toLowerCase() === address.toLowerCase()) break;
+      await sleep(200);
+      read = await readAddress(mmHomePage);
     }
-    // `active` is what `mm address` reads back now: the caller can see at once
-    // whether the switch took, instead of trusting `selected`.
-    const read = await readAddress(mmHomePage);
     const active = read.address ?? read.addressShort ?? null;
     return { address, selected, active, activeSource: read.source };
   },

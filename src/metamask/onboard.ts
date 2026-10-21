@@ -4,10 +4,12 @@ import { RigError, type CmdResult } from '../types.js';
 import { env, readEnvFile, readState, walletPassword, writeState } from '../daemon/state.js';
 import { ROOT } from '../daemon/state.js';
 import { resolve } from 'node:path';
-import { ONBOARD, HOME, NAGS, TEXT, UNLOCK } from './selectors.js';
+import { ACCOUNT, ONBOARD, HOME, NAGS, TEXT, UNLOCK } from './selectors.js';
 import { ensureUnlocked } from './unlock.js';
 import { config } from '../config.js';
 import { clickAny, clickByText, clickIfShown, fillOrThrow, shown, waitEnabled } from './dom.js';
+import { walletFacts } from './background.js';
+import { uiFacts } from './uistate.js';
 import { gotoHome, homeUrl } from './ui.js';
 
 /** Onboarding is bounded by time, not just iterations: a stuck screen returns. */
@@ -297,46 +299,63 @@ export function shortAddress(address: string): { head: string; tail: string } {
 /**
  * Make an imported account the selected one, so dapps see it.
  *
- * Reads the wallet through its accessibility tree: script evaluation is blocked
- * on wallet pages, so text extraction returns nothing there. The home header
- * names the selected account; the #/account-list route lists every account as
- * a name paragraph followed by its shortened address, and clicking the name
- * selects it.
+ * The wallet's own state says which account is selected and which it holds,
+ * so an account that is already selected costs no UI at all, and a switch is
+ * confirmed by that state rather than by reading a truncated header. The
+ * switch itself is the #/account-list route: search narrows the virtualized
+ * list to one row, and clicking its name selects it. Script evaluation is
+ * blocked on wallet pages, so the row is found in the accessibility tree.
  */
 export async function selectAccount(page: Page, address: string): Promise<boolean> {
+  const want = address.toLowerCase();
+  // Already selected: nothing to click. (An account missing from this
+  // persisted copy is not refused here: a fresh import lands in it a moment
+  // late; the search below is what finds or misses it.)
+  if ((await walletFacts())?.selected === want) return true;
+
   const { head, tail } = shortAddress(address);
   const mentions = (text: string): boolean => {
     const t = text.toLowerCase().replace(/\s+/g, '');
     return t.includes(head) && (t.includes(tail) || t.includes(tail.slice(-4)));
   };
   const snapshot = async (): Promise<string> => page.locator('body').ariaSnapshot({ timeout: 3000 }).catch(() => '');
-  const selectedOnHome = async (): Promise<boolean> => {
-    await gotoHome(page, '/', 1200);
-    // The header is the top of the tree; the token list below never prints addresses.
-    return mentions((await snapshot()).slice(0, 900));
-  };
-  if (await selectedOnHome()) return true;
 
-  await gotoHome(page, '/account-list', 700);
+  await gotoHome(page, '/account-list', 0);
   const search = page.getByRole('searchbox').first();
   await search.waitFor({ timeout: 10_000 }).catch(() => undefined);
   // The list is virtualized: with many accounts the target row is not rendered
   // until the search narrows it down.
   await search.fill(address).catch(() => undefined);
-  await page.waitForTimeout(400);
-  const lines = (await snapshot()).split('\n').map((l) => l.trim());
-  const at = lines.findIndex((l) => /^- paragraph: 0x/i.test(l) && mentions(l));
-  if (at < 0) return false;
+
+  // The filtered row draws a beat after the input; read the tree until it is there.
   let name: string | null = null;
-  for (let j = at - 1; j >= 0 && j >= at - 6; j--) {
-    const m = /^- paragraph: (.+)$/.exec(lines[j] ?? '');
-    if (m && !/^0x/i.test(m[1] ?? '')) {
-      name = m[1] ?? null;
-      break;
+  const rowDeadline = Date.now() + 5000;
+  while (!name && Date.now() < rowDeadline) {
+    const lines = (await snapshot()).split('\n').map((l) => l.trim());
+    const at = lines.findIndex((l) => /^- paragraph: 0x/i.test(l) && mentions(l));
+    for (let j = at - 1; at >= 0 && j >= 0 && j >= at - 6; j--) {
+      const m = /^- paragraph: (.+)$/.exec(lines[j] ?? '');
+      if (m && !/^0x/i.test(m[1] ?? '')) {
+        name = m[1] ?? null;
+        break;
+      }
     }
+    if (!name) await page.waitForTimeout(100);
   }
   if (!name) return false;
   await page.locator(`p:has-text("${name.replace(/"/g, '')}")`).first().click({ timeout: 5000 }).catch(() => undefined);
-  await page.waitForTimeout(1200);
-  return selectedOnHome();
+
+  // Confirmed by the page's own state the moment it changes; the worker's
+  // persisted copy is the fallback when the page cannot be read.
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const ui = await uiFacts(page);
+    if (ui?.selected === want) return true;
+    if (!ui && (await walletFacts())?.selected === want) return true;
+    await page.waitForTimeout(100);
+  }
+  // Neither state was readable: fall back to the header, as before.
+  await gotoHome(page, '/', 0);
+  const header = await page.locator(ACCOUNT.addressContainer).first().innerText({ timeout: 5000 }).catch(() => '');
+  return mentions(header);
 }
