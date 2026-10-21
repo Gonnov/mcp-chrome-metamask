@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { ACCOUNT, ONBOARD, HOME, NAGS, TEXT, UNLOCK } from './selectors.js';
 import { ensureUnlocked } from './unlock.js';
 import { config } from '../config.js';
-import { clickAny, clickByText, clickIfShown, fillOrThrow, shown, waitEnabled } from './dom.js';
+import { clickAny, clickByText, clickIfShown, fillOrThrow, shown, waitEnabled, whichShown } from './dom.js';
 import { walletFacts } from './background.js';
 import { uiFacts } from './uistate.js';
 import { gotoHome, homeUrl } from './ui.js';
@@ -272,15 +272,24 @@ export async function importKey(
   return { imported: true, address: expectedAddress, selected };
 }
 
+/** How long home may take to raise a nag after it draws. One wait covers every kind. */
+const NAG_WAIT_MS = 300;
+
 export async function dismissNags(page: Page): Promise<number> {
   let closed = 0;
-  for (const nag of NAGS) {
-    if (await clickIfShown(page, nag)) closed++;
+  // One wait for any nag, then close whatever shows, until none is left.
+  for (let round = 0, wait = NAG_WAIT_MS; round < NAGS.length + 2; round++, wait = 0) {
+    const i = await whichShown(page, NAGS, wait);
+    const nag = NAGS[i];
+    if (!nag || !(await clickIfShown(page, nag, 0))) break;
+    closed++;
   }
-  const closers = page.getByRole('button', { name: TEXT.closeButton });
-  const n = await closers.count().catch(() => 0);
-  for (let i = 0; i < Math.min(n, 4); i++) {
-    await closers.nth(0).click({ timeout: 2000 }).catch(() => undefined);
+  // Only visible closers: a hidden one (a closed drawer's) made each click
+  // here wait out its full timeout and close nothing.
+  const closers = page.getByRole('button', { name: TEXT.closeButton }).filter({ visible: true });
+  for (let i = 0; i < 4; i++) {
+    if ((await closers.count().catch(() => 0)) === 0) break;
+    if (!(await closers.first().click({ timeout: 1000 }).then(() => true).catch(() => false))) break;
     closed++;
     await page.waitForTimeout(250);
   }

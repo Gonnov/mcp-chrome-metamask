@@ -8,6 +8,9 @@ import { alive, sleep } from './util.js';
 const ENTRY = resolve(ROOT, 'src/daemon/index.ts');
 const LOADER = resolve(ROOT, 'node_modules/tsx/dist/loader.mjs');
 
+/** How often a launcher asks a starting daemon whether it is ready: a local HTTP probe costs about a millisecond. */
+const READY_POLL_MS = 200;
+
 /** argv for `node` to run the daemon from source through the tsx loader. */
 export function daemonSpawnArgs(headless: boolean, extra: string[] = []): string[] {
   return ['--import', LOADER, ENTRY, ...(headless ? ['--headless'] : []), ...extra];
@@ -70,13 +73,13 @@ export async function ensureDaemon(headless = false, extraArgs: string[] = []): 
     const state = await probe(info);
     if (state === 'ready') return info as DaemonInfo;
     if (state === 'booting' || state === 'stopping') {
-      await sleep(1000);
+      await sleep(READY_POLL_MS);
       continue;
     }
     // Down. A record whose process is alive but not answering is a daemon
     // between listen and its first status; give it a moment.
     if (info && alive(info.pid) && !spawned && Date.now() < aliveGrace) {
-      await sleep(1000);
+      await sleep(READY_POLL_MS);
       continue;
     }
     if (!spawned) {
@@ -93,7 +96,7 @@ export async function ensureDaemon(headless = false, extraArgs: string[] = []): 
     } else if (exitCode !== null && exitCode !== 0) {
       throw new DaemonError('NO_DAEMON', `daemon exited with code ${exitCode} before becoming ready; see .rig/daemon.log`);
     }
-    await sleep(1000);
+    await sleep(READY_POLL_MS);
   }
   throw new DaemonError('NO_DAEMON', 'daemon did not become ready in time; see .rig/daemon.log');
 }

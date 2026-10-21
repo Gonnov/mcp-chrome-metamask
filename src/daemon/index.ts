@@ -125,7 +125,9 @@ async function main(): Promise<void> {
   // rewrite state.json; losing it would lock the vault for good.
   walletPassword();
 
+  const launchedAt = Date.now();
   const { extensionId } = await launch({ headless });
+  const launchMs = Date.now() - launchedAt;
   // Boot BEFORE announcing readiness. It closes extension pages, so a client
   // that connects mid-boot can have the page it is using shut underneath it.
   const booted = await boot().catch((e: Error) => ({ booted: false, error: e.message }));
@@ -140,6 +142,7 @@ async function main(): Promise<void> {
       pid: process.pid,
       extensionId,
       headless,
+      launchMs,
       booted,
       idleMinutes: idleLimitMinutes(),
       daemonFile: DAEMON_FILE,

@@ -8,7 +8,7 @@ import { getPort, idleMs } from '../server.js';
 import { config, idleLimitMinutes } from '../../config.js';
 import { listPopups } from '../../metamask/notification.js';
 import { ensureUnlocked } from '../../metamask/unlock.js';
-import { dismissNags } from '../../metamask/onboard.js';
+import { waitUiFacts } from '../../metamask/uistate.js';
 import { shown } from '../../metamask/dom.js';
 import { HOME, UNLOCK } from '../../metamask/selectors.js';
 import { beginShutdown, finishShutdown } from '../lifecycle.js';
@@ -35,32 +35,43 @@ export async function closeExtensionPages(): Promise<number> {
 /**
  * Bring a freshly launched browser to a known state: unlocked, no nags, and no
  * extension page left open (an open one suppresses MetaMask's approvals).
+ * Every step waits for the wallet to say it is done rather than for a fixed
+ * time; `ms` reports where the time went.
  */
 export async function boot(): Promise<CmdResult> {
+  const t0 = Date.now();
+  const ms: Record<string, number> = {};
+  const lap = (k: string): void => {
+    ms[k] = Date.now() - t0;
+  };
   const state = readState();
 
   // MetaMask opens its own tab a beat after launch; reuse it instead of racing.
-  for (let i = 0; i < 20; i++) {
+  for (let deadline = Date.now() + 6000; Date.now() < deadline; await sleep(100)) {
     if (livePages().some((p) => classify(p) === 'mm')) break;
-    await sleep(300);
   }
   const page = await mmHomePage();
-  await page.waitForTimeout(1200);
+  lap('tab');
 
-  const locked = await shown(page, UNLOCK.password, 2500);
+  // The page's own state says when the UI is up and whether it is locked.
+  const facts = await waitUiFacts(page, 20_000);
+  lap('ui');
+  const locked = facts ? facts.onboarded && !facts.unlocked : await shown(page, UNLOCK.password, 2500);
   if (locked) await ensureUnlocked(page);
+  lap('unlock');
 
-  const onHome = await shown(page, HOME.accountMenu, 4000);
-  if (onHome) {
-    await dismissNags(page);
-    if (!state.onboarded) writeState({ onboarded: true });
-  }
+  const onHome = await shown(page, HOME.accountMenu, facts?.onboarded === false ? 1000 : 8000);
+  lap('home');
+  // Nags are not dismissed here: the tab closes below, and the commands that
+  // click on home (import, the address fallback) clear them themselves.
+  if (onHome && !state.onboarded) writeState({ onboarded: true });
 
   // Closing extension pages is what keeps MetaMask's approvals working, but
   // before the wallet exists the only extension page is its own onboarding tab.
   const onboarded = onHome || (state.onboarded ?? false);
   const closed = onboarded ? await closeExtensionPages() : 0;
-  return { booted: true, wasLocked: locked, onHome, closed, onboarded };
+  lap('closed');
+  return { booted: true, wasLocked: locked, onHome, closed, onboarded, ms };
 }
 
 /**
