@@ -13,9 +13,31 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DaemonInfo, RigState } from '../types.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-export const ROOT = resolve(here, '../..');
-export const RIG_DIR = resolve(ROOT, '.rig');
+/**
+ * The project root: the nearest directory above this module holding the
+ * package. Found by walking up, since the module runs both from src/daemon
+ * and bundled into dist/.
+ */
+export function findRoot(from: string): string {
+  for (let dir = from; ; dir = dirname(dir)) {
+    if (existsSync(resolve(dir, 'package.json'))) return dir;
+    if (dirname(dir) === dir) return resolve(from, '../..');
+  }
+}
+
+export const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
+
+/**
+ * Where the session lives: profile, wallet vault, daemon record. RIG_DIR
+ * points a run at a disposable copy, so a destructive test never touches the
+ * shared session. Read from the process environment only: the .env reader
+ * below lives inside it.
+ */
+export function rigDir(envValue = process.env['RIG_DIR']): string {
+  return envValue && envValue.trim() ? resolve(envValue.trim()) : resolve(ROOT, '.rig');
+}
+
+export const RIG_DIR = rigDir();
 export const PROFILE_DIR = resolve(RIG_DIR, 'profile');
 export const MM_ROOT = resolve(RIG_DIR, 'metamask');
 export const SHOTS_DIR = resolve(RIG_DIR, 'shots');

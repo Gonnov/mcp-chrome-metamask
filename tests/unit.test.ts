@@ -15,7 +15,7 @@ import { toHexChainId } from '../src/metamask/network.js';
 import { assertVersion, VERSION_RE } from '../src/metamask/fetch.js';
 import { hostAllowed } from '../src/daemon/server.js';
 import { allowedUrl, sameDestination, shotPath } from '../src/daemon/commands.js';
-import { readEnvFile, writeJsonAtomic } from '../src/daemon/state.js';
+import { ROOT, findRoot, readEnvFile, rigDir, writeJsonAtomic } from '../src/daemon/state.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -452,4 +452,16 @@ test('parseSteps: needs a cmd per step and refuses run, stop and boot inside a r
   assert.throws(() => parseSteps([{ cmd: 'stop' }]), /cannot run inside a run/);
   assert.throws(() => parseSteps([{ cmd: 'run', steps: [] }]), /cannot run inside a run/);
   assert.throws(() => parseSteps(['click']), /not an object/);
+});
+
+test('rigDir: RIG_DIR wins when set, blank falls back to <root>/.rig', () => {
+  assert.equal(rigDir('/tmp/rig-scratch'), '/tmp/rig-scratch');
+  assert.equal(rigDir('  /tmp/rig-scratch  '), '/tmp/rig-scratch');
+  assert.equal(rigDir(''), join(ROOT, '.rig'));
+  assert.equal(rigDir(undefined), join(ROOT, '.rig'));
+});
+
+test('findRoot: the nearest directory holding package.json, from src/daemon or dist', () => {
+  assert.equal(findRoot(join(ROOT, 'src', 'daemon')), ROOT);
+  assert.equal(findRoot(join(ROOT, 'dist')), ROOT);
 });
