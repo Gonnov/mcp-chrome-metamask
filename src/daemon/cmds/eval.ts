@@ -24,7 +24,11 @@ export async function cmdEval(args: Args): Promise<CmdResult> {
             const value = await (0, eval)(src);
             rig[id] = { done: true, value };
           } catch (e) {
-            rig[id] = { done: true, error: String(e) };
+            // Provider errors are plain objects ({ code, message }), which
+            // String() would flatten to "[object Object]".
+            const err = e as { message?: unknown; code?: unknown } | null;
+            const message = err && typeof err.message === 'string' ? err.message : String(e);
+            rig[id] = { done: true, error: message, ...(err && err.code !== undefined ? { code: err.code } : {}) };
           }
         })();
       },
