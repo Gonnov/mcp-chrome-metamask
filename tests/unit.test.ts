@@ -19,6 +19,7 @@ import { ROOT, findRoot, readEnvFile, rigDir, writeJsonAtomic } from '../src/dae
 import { isStale, newestSource } from '../src/bundle.js';
 import { toFacts } from '../src/metamask/background.js';
 import { toUiFacts } from '../src/metamask/uistate.js';
+import { shotsToPrune } from '../src/daemon/cmds/look.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -512,6 +513,18 @@ test('toUiFacts: missing or odd fields read as the safe answer (locked, nothing 
   });
   assert.deepEqual(toUiFacts({ pending: 'many', unlocked: 'yes' }), { pending: 0, unlocked: false, onboarded: false, selected: null });
   assert.equal(toUiFacts(null), null);
+});
+
+test('shotsToPrune keeps the newest N and names the rest', () => {
+  const files = [
+    { name: 'a.png', mtimeMs: 1 },
+    { name: 'b.png', mtimeMs: 3 },
+    { name: 'c.png', mtimeMs: 2 },
+    { name: 'd.png', mtimeMs: 4 },
+  ];
+  assert.deepEqual(shotsToPrune(files, 2).sort(), ['a.png', 'c.png']);
+  assert.deepEqual(shotsToPrune(files, 10), []);
+  assert.deepEqual(shotsToPrune(files, 0), []);
 });
 
 test('readConfigFile: the agent-writable file cannot switch the mainnet gate off', () => {

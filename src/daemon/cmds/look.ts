@@ -1,12 +1,12 @@
 /** Seeing a page: screenshot, OCR, accessibility tree, find, console. */
-import { writeFile } from 'node:fs/promises';
+import { readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import type { Page } from 'playwright';
 import { RigError, type Args, type CmdResult } from '../../types.js';
 import { bool, num, str } from '../../args.js';
 import { annotate, ocrPage } from '../../ocr.js';
 import { cacheOcr, clearLogs, getLogs, pageId, pageInfo } from '../browser.js';
-import { SHOTS_DIR, ensureDirs } from '../state.js';
+import { SHOTS_DIR, ensureDirs, env } from '../state.js';
 import { target } from './nav.js';
 
 /** A screenshot path must stay inside the shots directory. */
@@ -17,6 +17,30 @@ export function shotPath(out: string | undefined, stamp: string): string {
     throw new RigError('BAD_ARGS', `out must be a .png name inside ${SHOTS_DIR}`);
   }
   return full;
+}
+
+/** Screenshots kept in .rig/shots; older ones are deleted as new ones land. RIG_SHOTS_KEEP overrides. */
+export const SHOTS_KEEP = 200;
+
+/** The names to delete so only the `keep` newest remain. Exported for tests. */
+export function shotsToPrune(files: { name: string; mtimeMs: number }[], keep: number): string[] {
+  if (keep <= 0) return [];
+  return [...files]
+    .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name))
+    .slice(keep)
+    .map((f) => f.name);
+}
+
+/** Bound the shots directory. Best effort: a file another call is reading may already be gone. */
+async function pruneShots(): Promise<void> {
+  const raw = Number(env('RIG_SHOTS_KEEP', String(SHOTS_KEEP)));
+  const keep = Number.isInteger(raw) && raw > 0 ? raw : SHOTS_KEEP;
+  const names = (await readdir(SHOTS_DIR).catch(() => [] as string[])).filter((n) => n.endsWith('.png'));
+  if (names.length <= keep) return;
+  const files = await Promise.all(
+    names.map(async (name) => ({ name, mtimeMs: (await stat(resolve(SHOTS_DIR, name)).catch(() => null))?.mtimeMs ?? 0 })),
+  );
+  await Promise.all(shotsToPrune(files, keep).map((n) => unlink(resolve(SHOTS_DIR, n)).catch(() => undefined)));
 }
 
 export async function cmdShot(args: Args): Promise<CmdResult> {
@@ -47,6 +71,7 @@ export async function cmdShot(args: Args): Promise<CmdResult> {
     result['annotated'] = boxPath;
     result['ocrIds'] = ocr.words.length;
   }
+  await pruneShots();
   return result;
 }
 
