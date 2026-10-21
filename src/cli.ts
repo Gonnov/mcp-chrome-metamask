@@ -12,7 +12,7 @@ const HELP = `rig - drive a real Chrome with a real MetaMask
   shot [--out p] [--annotate] [--grid 100] [--full]
   ocr [--min-conf 60] [--psm 11]
   aria | find <text> [--role button]
-  click --xy X,Y | --id N | --text "t" [--nth 0] [--fuzzy .8] | --sel css | --role r --name n
+  click --xy X,Y | --id N | --text "t" [--nth 0] [--fuzzy .8] | --sel css | --role r --name n [--popup-ms 250]
   type "text" [--sel css] | press <Key> | scroll [--dy 400]
   wait --ms N | --text t | --url u | --sel css | --popup | --popup-gone [--timeout 15000]
   eval "<js>" [--fire] | result <reqId>
@@ -63,6 +63,8 @@ const options = {
   grid: { type: 'string' },
   psm: { type: 'string' },
   'min-conf': { type: 'string' },
+  'popup-ms': { type: 'string' },
+  steps: { type: 'string' },
   timeout: { type: 'string' },
   doge: { type: 'string' },
   amount: { type: 'string' },

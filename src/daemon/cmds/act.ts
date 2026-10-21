@@ -21,7 +21,8 @@ interface Clicked {
 }
 
 async function centre(loc: Locator): Promise<Point | null> {
-  const box = await loc.boundingBox().catch(() => null);
+  // Only for reporting where the click landed: never let it wait out the default 30s.
+  const box = await loc.boundingBox({ timeout: 1000 }).catch(() => null);
   return box ? { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) } : null;
 }
 
@@ -77,12 +78,20 @@ async function clickByTextOrOcr(page: Page, text: string, nth: number, fuzzy: nu
   return { method: 'ocr', matched: `${pick.b.text} (${pick.s.toFixed(2)})`, point: { x: pick.b.cx, y: pick.b.cy } };
 }
 
-async function withPopupWatch<T>(fn: () => Promise<T>): Promise<{ value: T; popupOpened: boolean }> {
+/**
+ * How long a click watches for a wallet window of its own. MetaMask almost
+ * never raises one under automation (prompts are reached with wait --popup),
+ * so this is a short courtesy look, not a wait; --popup-ms widens it.
+ */
+const POPUP_WATCH_MS = 250;
+
+async function withPopupWatch<T>(fn: () => Promise<T>, watchMs: number): Promise<{ value: T; popupOpened: boolean }> {
   const before = popupPages().length;
   const value = await fn();
-  for (let i = 0; i < 15; i++) {
+  const deadline = Date.now() + watchMs;
+  while (Date.now() < deadline) {
     if (popupPages().length > before) return { value, popupOpened: true };
-    await sleep(100);
+    await sleep(50);
   }
   return { value, popupOpened: popupPages().length > before };
 }
@@ -112,7 +121,7 @@ export async function cmdClick(args: Args): Promise<CmdResult> {
 
   // A click on a wallet popup can be a Confirm; it passes the same gate as approve.
   await guardPopupAction(page, args);
-  const { value, popupOpened } = await withPopupWatch(strategy);
+  const { value, popupOpened } = await withPopupWatch(strategy, Math.max(0, num(args, 'popup-ms', POPUP_WATCH_MS)));
   setActive(page);
   return { method: value.method, matched: value.matched, ...(value.point ?? {}), popupOpened };
 }
