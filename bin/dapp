@@ -1,4 +1,9 @@
 #!/bin/sh
-# Thin launcher so the agent can run ./bin/dapp <cmd> from anywhere.
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec node --import "$DIR/node_modules/tsx/dist/loader.mjs" "$DIR/src/cli.ts" "$@"
+# Thin launcher so the agent can run ./bin/rig <cmd> from anywhere.
+# Runs the prebuilt bundle (plain node starts in ~30 ms; the tsx loader adds
+# ~50 ms to every call). The bundle rebuilds itself when src/ is newer, so an
+# edit never runs stale code. No subshells here: each fork costs milliseconds.
+case $0 in */*) D="${0%/*}/..";; *) D="$(dirname "$(command -v "$0")")/..";; esac
+[ -f "$D/dist/cli.mjs" ] || "$D/scripts/build-cli.sh" >/dev/null 2>&1 ||
+  exec node --import "$D/node_modules/tsx/dist/loader.mjs" "$D/src/cli.ts" "$@"
+exec node "$D/dist/cli.mjs" "$@"

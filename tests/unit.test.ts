@@ -16,6 +16,7 @@ import { assertVersion, VERSION_RE } from '../src/metamask/fetch.js';
 import { hostAllowed } from '../src/daemon/server.js';
 import { allowedUrl, sameDestination, shotPath } from '../src/daemon/commands.js';
 import { ROOT, findRoot, readEnvFile, rigDir, writeJsonAtomic } from '../src/daemon/state.js';
+import { isStale, newestSource } from '../src/bundle.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -464,4 +465,19 @@ test('rigDir: RIG_DIR wins when set, blank falls back to <root>/.rig', () => {
 test('findRoot: the nearest directory holding package.json, from src/daemon or dist', () => {
   assert.equal(findRoot(join(ROOT, 'src', 'daemon')), ROOT);
   assert.equal(findRoot(join(ROOT, 'dist')), ROOT);
+});
+
+test('bundle freshness: stale only when a source is newer than the bundle', () => {
+  assert.equal(isStale(2000, 1000), false);
+  assert.equal(isStale(1000, 1000), false);
+  assert.equal(isStale(1000, 1001), true);
+  const dir = mkdtempSync(join(tmpdir(), 'rig-src-'));
+  try {
+    assert.equal(newestSource(dir), 0);
+    writeFileSync(join(dir, 'a.ts'), '');
+    writeFileSync(join(dir, 'notes.md'), '');
+    assert.ok(newestSource(dir) > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

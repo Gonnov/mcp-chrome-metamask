@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { ensureDirs, readDaemon } from './daemon/state.js';
+import { ROOT, ensureDirs, readDaemon } from './daemon/state.js';
+import { rerunIfStale } from './bundle.js';
 import { daemonSpawnArgs, ensureDaemon } from './launcher.js';
 import { parseScript } from './script.js';
 import { options, toCommand } from './argv.js';
@@ -95,6 +96,7 @@ async function send(cmd: string, args: Record<string, unknown>): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  rerunIfStale(ROOT, import.meta.url);
   const argv = process.argv.slice(2);
   const { values, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: false });
 

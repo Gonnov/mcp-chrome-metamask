@@ -17,6 +17,9 @@ importers:
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@25.9.8)
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       viem:
         specifier: ^2.56.8
         version: 2.56.8(typescript@5.9.3)(zod@4.6.5)
@@ -24,9 +27,9 @@ importers:
       '@types/node':
         specifier: ^25.0.0
         version: 25.9.8
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
