@@ -21,6 +21,7 @@
     "mcp:loop": "tsx scripts/mcp-loop.ts",
     "buy:loop": "tsx scripts/buy-loop.ts",
     "envless": "tsx scripts/envless-check.ts",
+    "bench": "tsx scripts/bench.ts",
     "build": "scripts/build-cli.sh"
   },
   "dependencies": {

@@ -21,6 +21,7 @@ import { toFacts } from '../src/metamask/background.js';
 import { toUiFacts } from '../src/metamask/uistate.js';
 import { shotsToPrune } from '../src/daemon/cmds/look.js';
 import { extraChromeArgs, otherRigProfiles, wantLowMemory } from '../src/daemon/browser.js';
+import { quantile, summarize } from '../scripts/bench.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -466,6 +467,8 @@ test('parseSteps: needs a cmd per step and refuses run, stop and boot inside a r
   assert.throws(() => parseSteps(['click']), /not an object/);
 });
 
+// ---- session location, bundle freshness ---------------------------------------
+
 test('rigDir: RIG_DIR wins when set, blank falls back to <root>/.rig', () => {
   assert.equal(rigDir('/tmp/rig-scratch'), '/tmp/rig-scratch');
   assert.equal(rigDir('  /tmp/rig-scratch  '), '/tmp/rig-scratch');
@@ -493,6 +496,8 @@ test('bundle freshness: stale only when a source is newer than the bundle', () =
   }
 });
 
+// ---- wallet state reads -------------------------------------------------------
+
 test('toFacts keeps only well-formed lower-case addresses and a numeric auto-lock', () => {
   const a = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
   assert.deepEqual(toFacts({ selected: a, accounts: [a, 'junk', 7], autoLockMinutes: 0 }), {
@@ -515,6 +520,8 @@ test('toUiFacts: missing or odd fields read as the safe answer (locked, nothing 
   assert.deepEqual(toUiFacts({ pending: 'many', unlocked: 'yes' }), { pending: 0, unlocked: false, onboarded: false, selected: null });
   assert.equal(toUiFacts(null), null);
 });
+
+// ---- disk bounds, operator-only settings -------------------------------------
 
 test('shotsToPrune keeps the newest N and names the rest', () => {
   const files = [
@@ -539,6 +546,19 @@ test('readConfigFile: the agent-writable file cannot switch the mainnet gate off
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- benchmark statistics -----------------------------------------------------
+
+test('bench summarize: median, p90 and max of a run', () => {
+  const s = summarize([5, 1, 4, 2, 3, 9, 8, 7, 6], ['#0: boom']);
+  assert.equal(s.median, 5);
+  assert.equal(s.p90, 9);
+  assert.equal(s.max, 9);
+  assert.equal(s.min, 1);
+  assert.equal(s.fails, 1);
+  assert.equal(summarize([1, 2, 3, 4], []).median, 3);
+  assert.equal(quantile([10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 0.9), 90);
 });
 
 test('extraChromeArgs: space-separated flags only, nothing when unset', () => {
