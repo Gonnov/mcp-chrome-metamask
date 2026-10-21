@@ -12,6 +12,8 @@ import { errLine } from '../util.js';
 export const PROBE_MS = 350;
 
 export async function shown(page: Page, sel: string, timeout = PROBE_MS): Promise<boolean> {
+  // Playwright reads a timeout of 0 as "wait forever"; here it means "look once".
+  if (timeout <= 0) return isShown(page, sel);
   try {
     await page.locator(sel).first().waitFor({ state: 'visible', timeout });
     return true;
@@ -21,6 +23,7 @@ export async function shown(page: Page, sel: string, timeout = PROBE_MS): Promis
 }
 
 export async function gone(page: Page, sel: string, timeout = PROBE_MS): Promise<boolean> {
+  if (timeout <= 0) return !(await isShown(page, sel));
   try {
     await page.locator(sel).first().waitFor({ state: 'hidden', timeout });
     return true;
@@ -29,7 +32,35 @@ export async function gone(page: Page, sel: string, timeout = PROBE_MS): Promise
   }
 }
 
+/** Whether any element matching `sel` is visible right now. No waiting. */
+export async function isShown(page: Page, sel: string): Promise<boolean> {
+  return (await page.locator(sel).filter({ visible: true }).count().catch(() => 0)) > 0;
+}
+
+/**
+ * Wait until any of the CSS selectors shows, then report the first one in
+ * list order that is visible: one wait for the whole ladder instead of a full
+ * timeout per rung that is absent. -1 when none showed in time.
+ */
+export async function whichShown(page: Page, selectors: string[], timeout = PROBE_MS): Promise<number> {
+  if (selectors.length === 0) return -1;
+  if (timeout > 0) {
+    await page
+      .locator(selectors.join(', '))
+      .filter({ visible: true })
+      .first()
+      .waitFor({ state: 'visible', timeout })
+      .catch(() => undefined);
+  }
+  for (const [i, sel] of selectors.entries()) {
+    if (await isShown(page, sel)) return i;
+  }
+  return -1;
+}
+
 async function visibleNow(loc: Locator, timeout: number): Promise<boolean> {
+  // Playwright reads a timeout of 0 as "wait forever"; here it means "look once".
+  if (timeout <= 0) return loc.isVisible().catch(() => false);
   try {
     await loc.waitFor({ state: 'visible', timeout });
     return true;

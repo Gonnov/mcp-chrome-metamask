@@ -7,10 +7,17 @@
 import type { Page } from 'playwright';
 import type { PopupKind, PromptInfo } from '../types.js';
 import { CONNECT_ROUTE, KIND_MARKERS, NETWORK_DISPLAY, NETWORK_SWITCH_TARGET, PROMPT_ROWS } from './selectors.js';
-import { shown } from './dom.js';
+import { isShown, whichShown } from './dom.js';
+import { sleep } from '../util.js';
 
-/** Per-marker probe: a rendered prompt shows its button at once. */
-const MARKER_PROBE_MS = 150;
+/**
+ * How long a read waits for any request marker to draw. One wait covers the
+ * whole marker ladder; a page that already settled answers at once.
+ */
+export const KIND_WAIT_MS = 500;
+
+/** A request page draws its rows a beat after its footer; this is how long a missing network row is waited for. */
+const NETWORK_ROW_WAIT_MS = 1500;
 
 function routeOf(url: string): string {
   try {
@@ -20,15 +27,21 @@ function routeOf(url: string): string {
   }
 }
 
-export async function detectKind(page: Page): Promise<PopupKind> {
+export async function detectKind(page: Page, waitMs = KIND_WAIT_MS): Promise<PopupKind> {
   // The connect flow's review page draws the legacy footer and names no single
   // network (it lists the enabled ones), so by its buttons it would read as a
   // `legacy` request with an unknown chain. It grants a site access, nothing more.
   if (CONNECT_ROUTE.test(routeOf(page.url()))) return 'connect';
-  for (const { kind, sel } of KIND_MARKERS) {
-    if (await shown(page, sel, MARKER_PROBE_MS)) return kind;
+  const sels = KIND_MARKERS.map((m) => m.sel);
+  let i = await whichShown(page, sels, waitMs);
+  // `confirm-btn` is also a secondary button on some warning pages, and the
+  // value-moving footer can draw a beat after it. A connect read from buttons
+  // alone is re-read once, so it never exempts a request still drawing.
+  if (KIND_MARKERS[i]?.kind === 'connect') {
+    await sleep(150);
+    i = await whichShown(page, sels, 0);
   }
-  return 'unknown';
+  return KIND_MARKERS[i]?.kind ?? 'unknown';
 }
 
 /**
@@ -80,8 +93,8 @@ async function ariaSnapshot(page: Page): Promise<string> {
 /** The network name from a dedicated element, on the legacy pages that have one. */
 async function networkFromElement(page: Page): Promise<string | null> {
   for (const sel of NETWORK_DISPLAY) {
-    if (!(await shown(page, sel, 150))) continue;
-    const text = (await page.locator(sel).first().innerText().catch(() => ''))?.trim();
+    if (!(await isShown(page, sel))) continue;
+    const text = (await page.locator(sel).first().innerText({ timeout: 2000 }).catch(() => ''))?.trim();
     if (text) return text;
   }
   return null;
@@ -92,14 +105,26 @@ async function networkFromElement(page: Page): Promise<string | null> {
  * network shown here, not any page of the rig's, is the only honest answer to
  * "which chain is this request on".
  */
-export async function readPrompt(page: Page): Promise<PromptInfo> {
-  const kind = await detectKind(page);
+export async function readPrompt(page: Page, waitMs = KIND_WAIT_MS): Promise<PromptInfo> {
+  const kind = await detectKind(page, waitMs);
   if (kind === 'unknown' || kind === 'unlock') {
     return { kind, network: null, origin: null, rpcHost: null, isNetworkPrompt: false, isSwitchPrompt: false };
   }
-  const isSwitchPrompt = await shown(page, NETWORK_SWITCH_TARGET, 150);
-  const snap = await ariaSnapshot(page);
-  const network = (await networkFromElement(page)) ?? rowFromAria(snap, PROMPT_ROWS.network);
+  // The footer is drawn, so the page is: these reads do not wait.
+  let isSwitchPrompt = await isShown(page, NETWORK_SWITCH_TARGET);
+  let snap = await ariaSnapshot(page);
+  let network = (await networkFromElement(page)) ?? rowFromAria(snap, PROMPT_ROWS.network);
+  // A request with no network row yet is still drawing it. Reading it as
+  // unknown would refuse it (the gate fails closed), so give the row a moment.
+  const deadline = Date.now() + NETWORK_ROW_WAIT_MS;
+  const waitsForRow = kind !== 'connect' && !isSwitchPrompt && !networkPromptFromAria(snap);
+  while (!network && waitsForRow && Date.now() < deadline && !page.isClosed()) {
+    await sleep(100);
+    isSwitchPrompt = await isShown(page, NETWORK_SWITCH_TARGET);
+    if (isSwitchPrompt) break;
+    snap = await ariaSnapshot(page);
+    network = (await networkFromElement(page)) ?? rowFromAria(snap, PROMPT_ROWS.network);
+  }
   return {
     kind,
     network,
