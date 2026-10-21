@@ -25,7 +25,7 @@ const HELP = `rig - drive a real Chrome with a real MetaMask
   mm status | address | unlock | approve [--all] [--force] | reject [--all] | pending | popups | home
   mm connect | add-network | import-key [--pkey 0x.. | --key-file p] | select --address 0x..
   mm request <method> [--params '[]']
-  chain info | balance [addr] | snapshot | revert <id> | fund [addr] [--amount N] | mine [--blocks N]
+  chain info | balance [addr] | snapshot | revert <id> | fund [addr] [--amount N] | mine [--blocks N]   [--rpc URL]
   network list | current | use --chain-id N --rpc-url U [--name] [--symbol]
   network allow <chainId> | disallow <chainId>   (operator only: vouch for a chain the classifier cannot place)
   run <file | -> | run --steps '<json>'           several commands in one call, stopping at the first failure

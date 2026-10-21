@@ -15,6 +15,7 @@ export const options = {
   id: { type: 'string' },
   xy: { type: 'string' },
   url: { type: 'string' },
+  rpc: { type: 'string' },
   key: { type: 'string' },
   version: { type: 'string' },
   params: { type: 'string' },
