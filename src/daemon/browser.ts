@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import type { BrowserContext, Page } from 'playwright';
 import {
@@ -8,12 +10,14 @@ import {
   type PageKind,
   type Target,
 } from '../types.js';
-import { PROFILE_DIR, readState, writeState } from './state.js';
+import { PROFILE_DIR, ROOT, readState, writeState } from './state.js';
 
 export interface RigBrowser {
   context: BrowserContext;
   extensionId: string;
   headless: boolean;
+  /** Launched with Chromium's low-end device mode, because another rig browser was already running. */
+  lowMemory: boolean;
 }
 
 let rig: RigBrowser | null = null;
@@ -248,6 +252,55 @@ export async function listPages(): Promise<PageInfo[]> {
   return Promise.all(livePages().map(pageInfo));
 }
 
+/**
+ * Extra Chromium flags from RIG_CHROME_ARGS (space separated), for tuning
+ * without a code change. Read from the process environment: the operator's word.
+ */
+export function extraChromeArgs(raw = process.env['RIG_CHROME_ARGS'] ?? ''): string[] {
+  return raw.split(/\s+/).filter((a) => a.startsWith('--'));
+}
+
+/** The flag that roughly halves MetaMask's memory (~850 → ~340 MB) for wallet commands 20–40% slower. */
+export const LOW_MEMORY_FLAG = '--enable-low-end-device-mode';
+
+/**
+ * Profiles of other rig browsers running on this machine, read from a `ps`
+ * listing: a Chromium started with a MetaMask-only extension flag and a
+ * profile other than ours. Exported for tests.
+ */
+export function otherRigProfiles(psOutput: string, ownProfile: string): string[] {
+  const own = resolve(ownProfile);
+  const dirs = new Set<string>();
+  for (const line of psOutput.split('\n')) {
+    if (!line.includes('--disable-extensions-except=') || line.includes('--type=')) continue;
+    const dir = /--user-data-dir=(\S+)/.exec(line)?.[1];
+    if (dir && resolve(dir) !== own) dirs.add(resolve(dir));
+  }
+  return [...dirs];
+}
+
+/**
+ * Full speed for the one browser everyone shares (the default .rig profile);
+ * low-end mode for any other profile started while another rig browser runs
+ * (an A/B copy, a second session's clone), so extra browsers cost about
+ * 0.95 GB instead of 1.2–1.6.
+ * RIG_LOW_MEMORY=1 or 0 overrides.
+ */
+export function wantLowMemory(override: string | undefined, othersRunning: number, sharedProfile: boolean): boolean {
+  if (override === '1') return true;
+  if (override === '0') return false;
+  // The shared session is the one everyone waits on: it stays at full speed.
+  return !sharedProfile && othersRunning > 0;
+}
+
+function runningRigProfiles(): string[] {
+  try {
+    return otherRigProfiles(execFileSync('ps', ['-axo', 'command='], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }), PROFILE_DIR);
+  } catch {
+    return [];
+  }
+}
+
 export async function launch(opts: { headless: boolean }): Promise<RigBrowser> {
   if (rig) return rig;
   const state = readState();
@@ -259,6 +312,8 @@ export async function launch(opts: { headless: boolean }): Promise<RigBrowser> {
     );
   }
 
+  const shared = resolve(PROFILE_DIR) === resolve(ROOT, '.rig', 'profile');
+  const lowMemory = wantLowMemory(process.env['RIG_LOW_MEMORY'], runningRigProfiles().length, shared);
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',
     headless: opts.headless,
@@ -267,6 +322,8 @@ export async function launch(opts: { headless: boolean }): Promise<RigBrowser> {
       `--disable-extensions-except=${mmDir}`,
       `--load-extension=${mmDir}`,
       '--window-size=1280,900',
+      ...(lowMemory ? [LOW_MEMORY_FLAG] : []),
+      ...extraChromeArgs(),
     ],
   });
 
@@ -282,7 +339,7 @@ export async function launch(opts: { headless: boolean }): Promise<RigBrowser> {
   }
   const extensionId = new URL(sw.url()).host;
 
-  rig = { context, extensionId, headless: opts.headless };
+  rig = { context, extensionId, headless: opts.headless, lowMemory };
   writeState({ extensionId });
 
   for (const p of context.pages()) track(p);

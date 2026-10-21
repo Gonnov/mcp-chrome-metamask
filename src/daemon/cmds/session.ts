@@ -3,6 +3,14 @@ import type { Page } from 'playwright';
 import type { CmdResult } from '../../types.js';
 import * as chain from '../../chain.js';
 import { busy, classify, closeOrBlank, ensurePage, getRig, listPages, livePages } from '../browser.js';
+
+function rigLowMemory(): boolean | null {
+  try {
+    return getRig().lowMemory;
+  } catch {
+    return null;
+  }
+}
 import { env, readDaemon, readState, writeState } from '../state.js';
 import { getPort, idleMs } from '../server.js';
 import { config, idleLimitMinutes } from '../../config.js';
@@ -96,6 +104,8 @@ export async function status(): Promise<CmdResult> {
       // How long since the last command, and when the daemon will give up and exit.
       idleSec: Math.round(idleMs() / 1000),
       idleLimitMinutes: idleLimitMinutes(),
+      // Low-end device mode: on when this browser started beside another rig browser.
+      lowMemory: rigLowMemory(),
     },
     extensionId: state.extensionId,
     metamask: { version: state.metamaskVersion, source: state.metamaskSource },

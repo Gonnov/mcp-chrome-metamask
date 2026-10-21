@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   walletPassword();
 
   const launchedAt = Date.now();
-  const { extensionId } = await launch({ headless });
+  const { extensionId, lowMemory } = await launch({ headless });
   const launchMs = Date.now() - launchedAt;
   // Boot BEFORE announcing readiness. It closes extension pages, so a client
   // that connects mid-boot can have the page it is using shut underneath it.
@@ -143,6 +143,7 @@ async function main(): Promise<void> {
       extensionId,
       headless,
       launchMs,
+      lowMemory,
       booted,
       idleMinutes: idleLimitMinutes(),
       daemonFile: DAEMON_FILE,

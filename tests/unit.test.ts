@@ -20,6 +20,7 @@ import { isStale, newestSource } from '../src/bundle.js';
 import { toFacts } from '../src/metamask/background.js';
 import { toUiFacts } from '../src/metamask/uistate.js';
 import { shotsToPrune } from '../src/daemon/cmds/look.js';
+import { extraChromeArgs, otherRigProfiles, wantLowMemory } from '../src/daemon/browser.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -538,4 +539,26 @@ test('readConfigFile: the agent-writable file cannot switch the mainnet gate off
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('extraChromeArgs: space-separated flags only, nothing when unset', () => {
+  assert.deepEqual(extraChromeArgs('  --enable-low-end-device-mode   --disable-gpu '), ['--enable-low-end-device-mode', '--disable-gpu']);
+  assert.deepEqual(extraChromeArgs(''), []);
+  assert.deepEqual(extraChromeArgs('rm -rf --x'), ['--x']);
+});
+
+test('low memory: extra profiles beside another rig browser, never the shared one, unless RIG_LOW_MEMORY says otherwise', () => {
+  const ps = [
+    '/x/Chromium --disable-extensions-except=/mm --load-extension=/mm --user-data-dir=/a/.rig/profile --window-size=1280,900',
+    '/x/Chromium Helper --type=renderer --disable-extensions-except=/mm --user-data-dir=/b/profile',
+    '/x/Chromium --disable-extensions-except=/mm --user-data-dir=/b/profile',
+    '/x/Google Chrome --user-data-dir=/home/me/chrome',
+  ].join('\n');
+  assert.deepEqual(otherRigProfiles(ps, '/a/.rig/profile'), ['/b/profile']);
+  assert.deepEqual(otherRigProfiles(ps.split('\n')[0] ?? '', '/a/.rig/profile'), []);
+  assert.equal(wantLowMemory(undefined, 0, false), false);
+  assert.equal(wantLowMemory(undefined, 1, false), true);
+  assert.equal(wantLowMemory(undefined, 2, true), false, 'the shared profile stays at full speed');
+  assert.equal(wantLowMemory('0', 3, false), false);
+  assert.equal(wantLowMemory('1', 0, true), true);
 });
