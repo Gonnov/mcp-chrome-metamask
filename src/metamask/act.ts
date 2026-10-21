@@ -2,11 +2,15 @@
 import type { Locator, Page } from 'playwright';
 import { RigError, type PopupGate, type PopupKind, type PromptInfo } from '../types.js';
 import { KIND_APPROVE, REJECT_ALL, REJECT_SELECTORS, REJECT_TEXTS, SCROLL_TO_BOTTOM, THIRD_PARTY_NOTICE } from './selectors.js';
-import { firstButton, firstShown, shown, waitEnabled } from './dom.js';
+import { firstButton, firstShown, isShown, waitEnabled } from './dom.js';
 import { ensureUnlocked } from './unlock.js';
 import { readPrompt } from './prompt.js';
 import { ensureNotification, reloadNotification } from './notification.js';
+import { uiFacts } from './uistate.js';
 import { sleep } from '../util.js';
+
+/** How long a confirmed request may take to leave the page before the rig reads what is there. */
+const LEAVE_MS = 3000;
 
 /** MV3 state-flush slack between two queued requests; do not shorten. */
 const BETWEEN_REQUESTS_MS = 800;
@@ -26,8 +30,9 @@ export type PopupAction = (page: Page, prompt: PromptInfo) => Promise<ActResult>
 
 async function pressPrimary(page: Page, prompt: PromptInfo, target: Locator, label: string): Promise<ActResult> {
   // Some confirmations disable the action until the user scrolls to the end.
-  if (await shown(page, SCROLL_TO_BOTTOM, 300)) {
-    await page.locator(SCROLL_TO_BOTTOM).first().click().catch(() => undefined);
+  // The prompt was read, so the page is drawn: no need to wait for the arrow.
+  if (await isShown(page, SCROLL_TO_BOTTOM)) {
+    await page.locator(SCROLL_TO_BOTTOM).first().click({ timeout: 5000 }).catch(() => undefined);
     await page.waitForTimeout(300);
   }
   // The button may exist but be disabled until the UI settles.
@@ -42,20 +47,28 @@ async function pressPrimary(page: Page, prompt: PromptInfo, target: Locator, lab
     ...(prompt.origin ? { origin: prompt.origin } : {}),
   };
   const urlBefore = page.url();
+  const pendingBefore = (await uiFacts(page))?.pending ?? null;
   try {
     await target.click({ timeout: 5000 });
   } catch (err) {
     if (page.isClosed()) return { ...base, closed: true };
     throw RigError.wrap(err);
   }
-  // Either the window closes, or it navigates in place to the next request.
-  for (let i = 0; i < 15; i++) {
+  // The request has left once the window closes, navigates to the next one,
+  // or the wallet's queue shrinks; whichever the wallet does first.
+  const deadline = Date.now() + LEAVE_MS;
+  let pendingAfter: number | null = null;
+  while (Date.now() < deadline) {
     if (page.isClosed()) return { ...base, closed: true };
     if (page.url() !== urlBefore) break;
-    await page.waitForTimeout(100);
+    pendingAfter = (await uiFacts(page))?.pending ?? null;
+    if (pendingBefore !== null && pendingAfter !== null && pendingAfter < pendingBefore) break;
+    await sleep(50);
   }
   if (page.isClosed()) return { ...base, closed: true };
-  return { ...base, nextKind: (await readPrompt(page)).kind };
+  // An empty queue has nothing to draw, so there is nothing to wait for.
+  const nextKind = pendingAfter === 0 ? 'unknown' : (await readPrompt(page)).kind;
+  return { ...base, nextKind };
 }
 
 /**
@@ -98,25 +111,40 @@ export async function approve(page: Page, prompt: PromptInfo): Promise<ActResult
   const own = KIND_APPROVE[prompt.kind];
   if (!own) throw new RigError('NO_ACTION', `no approve button for a ${prompt.kind} prompt (${page.url()})`);
   await acceptThirdPartyNotice(page);
-  const target = await firstShown(page, own, 500);
+  const target = await firstShown(page, own, 0);
   if (!target) throw new RigError('NO_ACTION', `the ${prompt.kind} prompt's button is not visible (${page.url()})`);
-  const label = (await target.innerText().catch(() => ''))?.trim() || 'button';
+  const label = (await target.innerText({ timeout: 2000 }).catch(() => ''))?.trim() || 'button';
   return pressPrimary(page, prompt, target, label);
 }
 
 export async function reject(page: Page, prompt: PromptInfo): Promise<ActResult> {
-  if (await shown(page, REJECT_ALL, 300)) {
+  if (await isShown(page, REJECT_ALL)) {
     await page.locator(REJECT_ALL).first().click({ timeout: 5000 });
     return { label: 'Reject all', kind: prompt.kind, closed: page.isClosed(), method: 'selector' };
   }
-  const bySel = await firstShown(page, REJECT_SELECTORS, 300);
+  const bySel = await firstShown(page, REJECT_SELECTORS, 0);
   if (bySel) {
-    const label = (await bySel.innerText().catch(() => ''))?.trim() || 'button';
+    const label = (await bySel.innerText({ timeout: 2000 }).catch(() => ''))?.trim() || 'button';
     return pressPrimary(page, prompt, bySel, label);
   }
-  const byText = await firstButton(page, REJECT_TEXTS, 250);
+  const byText = await firstButton(page, REJECT_TEXTS, 0);
   if (!byText) throw new RigError('NO_ACTION', `no cancel button on this ${prompt.kind} prompt (${page.url()})`);
   return pressPrimary(page, prompt, byText.loc, byText.label);
+}
+
+/**
+ * True when the wallet queues another request within `ms`; false once it has
+ * stayed empty that long. Unknown state (an unreadable page) counts as refilled,
+ * so the drain falls back to looking at the route.
+ */
+async function queueRefills(page: Page, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const facts = await uiFacts(page);
+    if (!facts || facts.pending > 0) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(50);
+  }
 }
 
 /**
@@ -149,13 +177,19 @@ export async function drain(
       prompt = await readPrompt(page);
       if (prompt.kind === 'unknown') break;
     }
+    let result: ActResult;
     try {
       if (opts.gate) await opts.gate(prompt, page);
-      done.push(await action(page, prompt));
+      result = await action(page, prompt);
+      done.push(result);
     } catch (err) {
       throw RigError.wrap(err, { stoppedAt: { index: i, kind: prompt.kind }, actions: done });
     }
-    await sleep(BETWEEN_REQUESTS_MS);
+    // A site often queues its next request a beat after the last is settled
+    // (a sign-in right after connect). Watch the queue for that long instead
+    // of sleeping it out, and stop as soon as it stays empty.
+    if (!result.closed && result.nextKind === 'unknown' && !(await queueRefills(page, BETWEEN_REQUESTS_MS))) break;
+    if (result.closed || result.nextKind !== 'unknown') await sleep(BETWEEN_REQUESTS_MS);
   }
   return done;
 }
