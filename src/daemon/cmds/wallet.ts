@@ -1,5 +1,4 @@
 /** mm.* commands: everything that drives MetaMask. */
-import { privateKeyToAccount } from 'viem/accounts';
 import { RigError, type Args, type CmdResult } from '../../types.js';
 import { sleep } from '../../util.js';
 import { bool, str } from '../../args.js';
@@ -37,8 +36,10 @@ function isHexKey(key: string): key is `0x${string}` {
   return /^0x[0-9a-fA-F]{64}$/.test(key);
 }
 
-function addressOf(key: string): string {
+/** viem is loaded on first use: importing a key is rare, and the daemon should start without it. */
+async function addressOf(key: string): Promise<string> {
   if (!isHexKey(key)) throw new RigError('BAD_ARGS', 'the private key must be 32 bytes of hex, optionally 0x-prefixed');
+  const { privateKeyToAccount } = await import('viem/accounts');
   return privateKeyToAccount(key).address;
 }
 
@@ -162,7 +163,7 @@ async function setupCmd(args: Args): Promise<CmdResult> {
   const { key, fromArgv } = keyFromArgs(args);
   let imported: CmdResult = { imported: false, reason: 'no burner key given' };
   if (key) {
-    imported = await importKey(mmHomePage, key, addressOf(key));
+    imported = await importKey(mmHomePage, key, await addressOf(key));
     if (fromArgv) imported['warning'] = ARGV_KEY_WARNING;
   }
 
@@ -247,7 +248,7 @@ const commands: Record<string, (args: Args) => Promise<CmdResult>> = {
   async 'import-key'(args) {
     await (await mmHomePage()).bringToFront().catch(() => undefined);
     const key = readPrivateKey(str(args, 'env-file'), str(args, 'var'), str(args, 'key_file'), str(args, 'pkey'));
-    const result = await importKey(mmHomePage, key, addressOf(key));
+    const result = await importKey(mmHomePage, key, await addressOf(key));
     if (str(args, 'pkey')) result['warning'] = ARGV_KEY_WARNING;
     return result;
   },

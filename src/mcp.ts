@@ -8,7 +8,6 @@
  * Nothing may write to stdout here except protocol frames.
  */
 import { readFile } from 'node:fs/promises';
-import sharp from 'sharp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -126,6 +125,8 @@ async function look(a: Args): Promise<CallToolResult> {
           ],
         };
       }
+      // Loaded here, not at startup: most sessions never take a screenshot.
+      const sharp = (await import('sharp')).default;
       const meta = await sharp(raw).metadata();
       const width = Math.min(meta.width ?? MAX_SHOT_WIDTH, MAX_SHOT_WIDTH);
       const small = await sharp(raw).resize({ width }).jpeg({ quality: 72 }).toBuffer();

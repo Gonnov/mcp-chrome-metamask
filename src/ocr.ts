@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
-import sharp from 'sharp';
 import type { Page } from 'playwright';
 import { RigError, type OcrBox, type OcrResult } from './types.js';
+
+/** sharp is a native module of several MB; only OCR and annotation need it, so it loads on first use. */
+async function loadSharp(): Promise<typeof import('sharp').default> {
+  return (await import('sharp')).default;
+}
 
 /** Run tesseract with the image on stdin, TSV on stdout. */
 function tesseract(buf: Buffer, psm: number): Promise<string> {
@@ -46,6 +50,7 @@ export interface OcrOptions {
 
 /** Screenshot sized for OCR. Retina gives 2x for free; otherwise upscale. */
 async function ocrImage(page: Page): Promise<{ buf: Buffer; scale: number }> {
+  const sharp = await loadSharp();
   const cssShot = await page.screenshot({ scale: 'css' });
   const cssMeta = await sharp(cssShot).metadata();
   const cssWidth = cssMeta.width ?? 0;
@@ -223,6 +228,7 @@ export async function annotate(
   result: OcrResult,
   grid: number,
 ): Promise<Buffer> {
+  const sharp = await loadSharp();
   const meta = await sharp(cssShot).metadata();
   const w = meta.width ?? 0;
   const h = meta.height ?? 0;
