@@ -59,7 +59,17 @@ async function clickByOcrId(page: Page, id: string): Promise<Clicked> {
 }
 
 /** DOM first (exact and instant when the app owns the markup), then OCR for markup we do not control. */
+/** How long a text click waits for the text to render before trying OCR: a modal opening is not unreadable markup. */
+const TEXT_APPEAR_MS = 2000;
+
 async function clickByTextOrOcr(page: Page, text: string, nth: number, fuzzy: number): Promise<Clicked> {
+  await page
+    .getByRole('button', { name: text, exact: false })
+    .or(page.getByText(text, { exact: false }))
+    .filter({ visible: true })
+    .first()
+    .waitFor({ state: 'visible', timeout: TEXT_APPEAR_MS })
+    .catch(() => undefined);
   for (const loc of [page.getByRole('button', { name: text, exact: false }), page.getByText(text, { exact: false })]) {
     const count = await loc.count().catch(() => 0);
     if (count <= nth) continue;

@@ -265,7 +265,11 @@ export function similarity(a: string, b: string): number {
   const t = b.toLowerCase().trim();
   if (s === t) return 1;
   if (!s || !t) return 0;
-  if (s.includes(t) || t.includes(s)) return 0.9;
+  // OCR text that holds the whole target ("Buy" in "Buy STK1") is a near
+  // match. A fragment of the target is only worth its share of it: "All" is
+  // not "Or connect a wallet", though the phrase contains it.
+  if (s.includes(t)) return 0.9;
+  if (t.includes(s)) return 0.9 * (s.length / t.length);
   const m = s.length;
   const n = t.length;
   let prev = Array.from({ length: n + 1 }, (_, i) => i);

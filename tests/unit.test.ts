@@ -381,6 +381,13 @@ test('toWeiHex and formatNative round-trip whole and fractional amounts', () => 
   assert.equal(formatNative('0x0'), '0.000000');
 });
 
+test('similarity: a short OCR word inside a longer target is not a match', () => {
+  assert.ok(similarity('All', 'Or connect a wallet') < 0.8);
+  assert.ok(similarity('wallet', 'Or connect a wallet') < 0.8);
+  assert.equal(similarity('Buy STK1 now', 'Buy STK1'), 0.9);
+  assert.ok(similarity('Or connect a walle', 'Or connect a wallet') >= 0.8);
+});
+
 test('similarity is 1 for equal text and drops with edits', () => {
   assert.equal(similarity('Buy FEE66607', 'Buy FEE66607'), 1);
   assert.ok(similarity('Buy FEE66607', 'Buy FEE6607') > 0.8);
