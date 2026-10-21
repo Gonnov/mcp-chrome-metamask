@@ -21,7 +21,10 @@ interface Clicked {
 }
 
 async function centre(loc: Locator): Promise<Point | null> {
-  // Only for reporting where the click landed: never let it wait out the default 30s.
+  // Only for reporting where the click landed: never let it wait out the
+  // default 30s, nor wait at all for an element that is not there yet (the
+  // click itself does that waiting).
+  if ((await loc.count().catch(() => 0)) === 0) return null;
   const box = await loc.boundingBox({ timeout: 1000 }).catch(() => null);
   return box ? { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) } : null;
 }

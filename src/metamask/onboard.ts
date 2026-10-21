@@ -73,7 +73,7 @@ export async function onboard(
         break;
       case 'terms':
         await clickIfShown(page, ONBOARD.termsScroll);
-        await page.locator(ONBOARD.termsCheckbox).first().click().catch(() => undefined);
+        await page.locator(ONBOARD.termsCheckbox).first().click({ timeout: 5000 }).catch(() => undefined);
         await clickIfShown(page, ONBOARD.termsAgree);
         break;
       case 'welcome':
@@ -96,7 +96,7 @@ export async function onboard(
       case 'password': {
         await page.locator(ONBOARD.passwordNew).fill(password);
         await page.locator(ONBOARD.passwordConfirm).fill(password);
-        await page.locator(ONBOARD.passwordTerms).first().click().catch(() => undefined);
+        await page.locator(ONBOARD.passwordTerms).first().click({ timeout: 5000 }).catch(() => undefined);
         if (!(await clickIfShown(page, ONBOARD.passwordSubmit))) {
           await clickByText(page, TEXT.createPassword);
         }

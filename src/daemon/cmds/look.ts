@@ -143,10 +143,11 @@ export async function cmdFind(args: Args): Promise<CmdResult> {
     const n = await loc.count().catch(() => 0);
     for (let i = 0; i < Math.min(n, 5); i++) {
       const item = loc.nth(i);
-      const box = await item.boundingBox().catch(() => null);
+      // Explicit timeouts: Playwright's default is 30s, and a match can detach mid-read.
+      const box = await item.boundingBox({ timeout: 1000 }).catch(() => null);
       if (!box) continue;
       hits.push({
-        text: (await item.innerText().catch(() => ''))?.trim().slice(0, 80),
+        text: (await item.innerText({ timeout: 1000 }).catch(() => ''))?.trim().slice(0, 80),
         box: { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height) },
         cx: Math.round(box.x + box.width / 2),
         cy: Math.round(box.y + box.height / 2),
