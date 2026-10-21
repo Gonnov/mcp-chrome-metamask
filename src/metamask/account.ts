@@ -53,13 +53,22 @@ export function matchKnown(short: string, known: (string | undefined)[]): string
  */
 export async function readAddress(getHome: () => Promise<Page>, opts: { keep?: boolean } = {}): Promise<AddressRead> {
   return withHome(getHome, async (home) => {
-    await gotoHome(home, '/', 800);
-    await dismissNags(home);
+    // No fixed settle: the header read below waits for the page to render it.
+    await gotoHome(home, '/', 0);
 
     // Read the header first: it is always there, and it is what every other
     // candidate has to agree with.
-    const short = (await home.locator(ACCOUNT.addressContainer).first().innerText({ timeout: 1500 }).catch(() => ''))
+    const short = (await home.locator(ACCOUNT.addressContainer).first().innerText({ timeout: 3000 }).catch(() => ''))
       .trim();
+
+    // A header that matches an account the rig imported is already a full
+    // answer; the QR modal below costs seconds of clicking for the same string.
+    if (short) {
+      const state = readState();
+      const known = matchKnown(short, [state.importedAddress, state.walletAddress, ...(state.importedAddresses ?? [])]);
+      if (known) return { address: known, addressShort: short, source: 'known' };
+    }
+    await dismissNags(home);
 
     if (await clickIfShown(home, ACCOUNT.addressMenuButton, 2500)) {
       await home.waitForTimeout(600);
