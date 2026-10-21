@@ -37,6 +37,36 @@ export interface RigConfig {
   allowMainnet?: boolean;
   /** Where to read a burner key from, if the operator chose a file. */
   privateKeyFile?: string;
+  /**
+   * Minutes without a command before the daemon closes the browser and exits;
+   * the next call relaunches it. 0 disables. Default: DEFAULT_IDLE_MINUTES.
+   */
+  idleMinutes?: number;
+}
+
+/** A forgotten daemon keeps a whole Chromium in RAM; this is how long it may sit unused. */
+export const DEFAULT_IDLE_MINUTES = 15;
+
+/** Minutes the daemon may sit without a command before it exits; 0 means never. */
+export function idleLimitMinutes(): number {
+  return config().idleMinutes ?? DEFAULT_IDLE_MINUTES;
+}
+
+/** True when an idle daemon has outlived its allowance and no command is running. */
+export function idleExpired(idleMillis: number, limitMinutes: number, inFlight: number): boolean {
+  if (limitMinutes <= 0) return false;
+  if (inFlight > 0) return false;
+  return idleMillis >= limitMinutes * 60_000;
+}
+
+/** Non-negative whole minutes, or undefined when nothing was given. */
+export function parseIdleMinutes(raw: unknown, source: string): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  if (!Number.isInteger(n) || n < 0) {
+    throw new RigError('BAD_ARGS', `${source} must be a whole number of minutes (0 disables), got "${String(raw)}"`);
+  }
+  return n;
 }
 
 /** Parsed once from argv at process start. */
@@ -94,6 +124,13 @@ export function readConfigFile(): RigConfig {
   if (r['allowMainnet'] === true) out.allowMainnet = true;
   const keyFile = optStr(r['privateKeyFile']);
   if (keyFile) out.privateKeyFile = keyFile;
+  // A bad value in the agent-writable file is dropped, never fatal.
+  try {
+    const idle = parseIdleMinutes(r['idleMinutes'], 'idleMinutes');
+    if (idle !== undefined) out.idleMinutes = idle;
+  } catch {
+    /* ignore */
+  }
   return out;
 }
 
@@ -123,6 +160,8 @@ function fromEnv(): RigConfig {
   if (env['RIG_HEADLESS'] === '1') out.headless = true;
   if (env['RIG_ALLOW_MAINNET'] === '1') out.allowMainnet = true;
   if (env['RIG_KEY_FILE']) out.privateKeyFile = env['RIG_KEY_FILE'];
+  const idle = parseIdleMinutes(env['RIG_IDLE_MINUTES'], 'RIG_IDLE_MINUTES');
+  if (idle !== undefined) out.idleMinutes = idle;
   return out;
 }
 
@@ -168,6 +207,8 @@ export function parseLaunchArgs(argv: string[]): RigConfig {
   if (appUrl) cfg.appUrl = appUrl;
   const keyFile = get('--key-file');
   if (keyFile) cfg.privateKeyFile = keyFile;
+  const idle = parseIdleMinutes(get('--idle-minutes'), '--idle-minutes');
+  if (idle !== undefined) cfg.idleMinutes = idle;
   if (argv.includes('--headless')) cfg.headless = true;
   if (argv.includes('--allow-mainnet')) cfg.allowMainnet = true;
   return cfg;
@@ -185,6 +226,7 @@ export function launchArgsToArgv(cfg: RigConfig): string[] {
   }
   if (cfg.appUrl) out.push('--app-url', cfg.appUrl);
   if (cfg.privateKeyFile) out.push('--key-file', cfg.privateKeyFile);
+  if (cfg.idleMinutes !== undefined) out.push('--idle-minutes', String(cfg.idleMinutes));
   if (cfg.headless) out.push('--headless');
   if (cfg.allowMainnet) out.push('--allow-mainnet');
   return out;

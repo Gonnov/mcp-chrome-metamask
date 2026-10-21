@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { RigError } from '../types.js';
-import { launch, onBrowserClosed } from './browser.js';
-import { config, parseLaunchArgs, setLaunchArgs } from '../config.js';
+import { busy, launch, onBrowserClosed } from './browser.js';
+import { config, idleExpired, idleLimitMinutes, parseLaunchArgs, setLaunchArgs } from '../config.js';
 import { boot } from './dispatch.js';
-import { markReady, startServer } from './server.js';
+import { idleMs, markReady, startServer, touch } from './server.js';
 import { shutdown } from './lifecycle.js';
 import { alive } from '../util.js';
 import {
@@ -41,6 +41,26 @@ function saveRecord(flags: { booting?: boolean; stopping?: boolean } = {}): void
 /** Leave nothing behind that names this process: a stale record sends clients to a dead port. */
 function releaseRecord(): void {
   clearDaemon(process.pid);
+}
+
+/**
+ * A forgotten daemon is a whole Chromium (often gigabytes) sitting in RAM for
+ * nothing, and headless it is invisible. Nobody reliably runs `stop` at the end
+ * of a test run, so the daemon times itself out; the next call relaunches it.
+ */
+function startIdleWatchdog(): void {
+  const limit = idleLimitMinutes();
+  if (limit <= 0) return;
+  touch();
+  const timer = setInterval(() => {
+    const idle = idleMs();
+    if (!idleExpired(idle, limit, busy())) return;
+    clearInterval(timer);
+    console.log(JSON.stringify({ idleExit: true, pid: process.pid, idleSec: Math.round(idle / 1000), limitMinutes: limit }));
+    shutdown(0);
+  }, 30_000);
+  // The watchdog must never be what keeps the process alive.
+  timer.unref();
 }
 
 async function main(): Promise<void> {
@@ -111,9 +131,19 @@ async function main(): Promise<void> {
   const booted = await boot().catch((e: Error) => ({ booted: false, error: e.message }));
   markReady();
   saveRecord();
+  startIdleWatchdog();
 
   console.log(
-    JSON.stringify({ started: true, port, pid: process.pid, extensionId, headless, booted, daemonFile: DAEMON_FILE }),
+    JSON.stringify({
+      started: true,
+      port,
+      pid: process.pid,
+      extensionId,
+      headless,
+      booted,
+      idleMinutes: idleLimitMinutes(),
+      daemonFile: DAEMON_FILE,
+    }),
   );
 }
 

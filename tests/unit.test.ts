@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { classify, parseChainId, primeRegistry, isLocalRpc, KNOWN_MAINNETS } from '../src/chains.js';
-import { parseLaunchArgs, launchArgsToArgv } from '../src/config.js';
+import { DEFAULT_IDLE_MINUTES, idleExpired, launchArgsToArgv, parseIdleMinutes, parseLaunchArgs } from '../src/config.js';
 import { toHexChainId } from '../src/metamask/network.js';
 import { assertVersion, VERSION_RE } from '../src/metamask/fetch.js';
 import { hostAllowed } from '../src/daemon/server.js';
@@ -117,6 +117,32 @@ test('parseLaunchArgs round-trips through launchArgsToArgv', () => {
     allowMainnet: true,
   });
   assert.deepEqual(parseLaunchArgs(launchArgsToArgv(cfg)), cfg);
+});
+
+test('idle timeout: --idle-minutes round-trips, 0 is allowed, garbage is refused', () => {
+  const cfg = parseLaunchArgs(['--idle-minutes', '5', '--headless']);
+  assert.deepEqual(cfg, { idleMinutes: 5, headless: true });
+  assert.deepEqual(parseLaunchArgs(launchArgsToArgv(cfg)), cfg);
+  assert.deepEqual(parseLaunchArgs(['--idle-minutes', '0']), { idleMinutes: 0 });
+  assert.equal(parseLaunchArgs([]).idleMinutes, undefined);
+  assert.throws(() => parseLaunchArgs(['--idle-minutes', 'soon']), /whole number of minutes/);
+  assert.throws(() => parseLaunchArgs(['--idle-minutes', '-1']), /whole number of minutes/);
+  assert.throws(() => parseLaunchArgs(['--idle-minutes', '1.5']), /whole number of minutes/);
+  assert.throws(() => parseLaunchArgs(['--idle-minutes', '--headless']), /needs a value/);
+  assert.equal(parseIdleMinutes(' 20 ', 'x'), 20);
+  assert.equal(parseIdleMinutes(undefined, 'x'), undefined);
+  assert.equal(parseIdleMinutes('', 'x'), undefined);
+  assert.ok(DEFAULT_IDLE_MINUTES > 0);
+});
+
+test('idleExpired: only an idle, unbusy daemon past its limit; 0 never expires', () => {
+  const min = 60_000;
+  assert.equal(idleExpired(15 * min, 15, 0), true);
+  assert.equal(idleExpired(15 * min - 1, 15, 0), false);
+  // A command still running (a slow wallet flow) holds the daemon open.
+  assert.equal(idleExpired(60 * min, 15, 1), false);
+  // 0 disables the timeout outright.
+  assert.equal(idleExpired(24 * 60 * min, 0, 0), false);
 });
 
 // ---- daemon guards -----------------------------------------------------------------

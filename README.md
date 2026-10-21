@@ -141,7 +141,7 @@ rig_wallet   { "action": "approve", "all": true }      the transaction
 
 Things an agent should know:
 
-- **The wallet persists.** `setup` runs once; later sessions start unlocked. `rig_session stop` closes the browser, the next call relaunches it.
+- **The wallet persists.** `setup` runs once; later sessions start unlocked. `rig_session stop` closes the browser, the next call relaunches it. A daemon left alone for 15 minutes (`--idle-minutes` / `RIG_IDLE_MINUTES`) does the same by itself, so a forgotten test run does not keep a Chromium in RAM.
 - **Open the site before wallet calls.** `rig_wallet connect` and `rig_wallet request` run `window.ethereum` in the page under test, because MetaMask scopes accounts and the selected network per site. With no site open they return `NO_APP_PAGE`.
 - **Look before you click.** `rig_look aria` is the cheap way to read a page; `rig_look find` reports whether a control is visible and enabled, and apps often render a disabled twin of the button you want. The tree covers modals mounted outside `<body>` (wallet SDK dialogs do this) and child frames: they come back as extra `# dialog` / `# frame` sections, listed in `extraRoots`.
 - **The default target stays on the site.** Wallet pages the rig opens for itself (status, add-network, address) never become the default target, so `active` still means the site under test. `rig_navigate use` pins another one when you want it.
@@ -445,6 +445,7 @@ Optional, for a chain the public registry does not know, or to change defaults:
 | `--app-url` | `RIG_APP_URL` | Default app URL |
 | `--key-file` | `RIG_KEY_FILE` | File holding only a burner key |
 | `--headless` | `RIG_HEADLESS=1` | No visible window (untested; extensions in new headless Chromium may work, may not) |
+| `--idle-minutes <n>` | `RIG_IDLE_MINUTES=<n>` | Minutes without a command before the daemon closes the browser and exits (default 15; `0` never). The next call relaunches it. |
 | `--allow-mainnet` | `RIG_ALLOW_MAINNET=1` | Permit approvals on real-money chains |
 | | `RIG_PORT` | Daemon port, default 7331 |
 
@@ -464,6 +465,7 @@ The loops restart the browser between runs and clear the site's session, so ever
 ## 🐛 Traps Already Handled
 
 - **MetaMask never raises a usable approval window under automation.** With any extension page open it suppresses the popup; with none open it opens its home page, showing the wallet rather than the request. The queue is only reachable at `notification.html`, which the rig opens itself and reloads on every poll.
+- **A forgotten daemon is a Chromium eating gigabytes for nothing.** Headless, it is invisible too. The daemon times itself out after 15 idle minutes (`--idle-minutes`, `RIG_IDLE_MINUTES`; `0` disables), counting only commands, not liveness probes, and never while a command is still running. `status` reports `idleSec` and `idleLimitMinutes`.
 - **The browser must not close straight after an approval.** Extension state is written asynchronously, so shutting down too fast loses the permission, network or account just granted.
 - **Two daemons must never share the profile.** The daemon claims `.rig/daemon.json` the moment it listens, flagged `booting`, and flags it `stopping` on the way out; every launcher waits on those states instead of starting a twin, and a daemon only ever removes its own record. If the browser is closed from outside, the daemon exits and the next call relaunches it.
 - **The rig has no tab of its own.** Provider calls (`connect`, `request`, `add_network` with a site open) run `window.ethereum` in the page under test, exactly as a user's dapp would; MetaMask scopes accounts and the selected network per site, so that is the only honest place to ask. Wallet-only work (reading the address, adding a network with no site open, checking the lock) drives MetaMask's own pages in a temporary tab that is closed again and hands focus back. Nothing but the app and MetaMask is ever on screen.

@@ -4,8 +4,8 @@ import type { CmdResult } from '../../types.js';
 import * as chain from '../../chain.js';
 import { busy, classify, closeOrBlank, ensurePage, getRig, listPages, livePages } from '../browser.js';
 import { env, readDaemon, readState, writeState } from '../state.js';
-import { getPort } from '../server.js';
-import { config } from '../../config.js';
+import { getPort, idleMs } from '../server.js';
+import { config, idleLimitMinutes } from '../../config.js';
 import { listPopups } from '../../metamask/notification.js';
 import { ensureUnlocked } from '../../metamask/unlock.js';
 import { dismissNags } from '../../metamask/onboard.js';
@@ -76,7 +76,16 @@ export async function status(): Promise<CmdResult> {
   const out: CmdResult = {
     port,
     headless,
-    daemon: { pid: process.pid, port, headless, uptimeSec: Math.round(process.uptime()), busy: busy() },
+    daemon: {
+      pid: process.pid,
+      port,
+      headless,
+      uptimeSec: Math.round(process.uptime()),
+      busy: busy(),
+      // How long since the last command, and when the daemon will give up and exit.
+      idleSec: Math.round(idleMs() / 1000),
+      idleLimitMinutes: idleLimitMinutes(),
+    },
     extensionId: state.extensionId,
     metamask: { version: state.metamaskVersion, source: state.metamaskSource },
     onboarded: state.onboarded ?? false,

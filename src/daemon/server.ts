@@ -35,6 +35,18 @@ export function markStopping(): void {
 }
 
 /**
+ * When a client last asked the daemon to do something. Liveness probes do not
+ * count: launchers poll /health without meaning to use the browser.
+ */
+let lastActivity = Date.now();
+export function touch(): void {
+  lastActivity = Date.now();
+}
+export function idleMs(now = Date.now()): number {
+  return Math.max(0, now - lastActivity);
+}
+
+/**
  * Only the loopback names the daemon binds to may appear in Host. A page on any
  * other origin whose name resolves to 127.0.0.1 (DNS rebinding) sends its own
  * hostname here and is refused.
@@ -115,6 +127,7 @@ export function startServer(port: number, token: string): Promise<number> {
 
     if (url.pathname === '/live.jpg') {
       if (!requireAuth(res, authed)) return;
+      touch();
       const target = url.searchParams.get('target') ?? 'active';
       const cached = liveCache.get(target);
       if (cached && Date.now() - cached.at < 400) {
@@ -155,6 +168,7 @@ export function startServer(port: number, token: string): Promise<number> {
         send(res, 503, { booting: true, pid: process.pid });
         return;
       }
+      touch();
       send(res, 200, await dispatch('status', {}));
       return;
     }
@@ -169,6 +183,7 @@ export function startServer(port: number, token: string): Promise<number> {
         send(res, 503, { error: 'daemon is still starting the browser', code: 'BOOTING' });
         return;
       }
+      touch();
       const body = await readBody(req);
       let parsed: { cmd?: string; args?: Record<string, unknown> };
       try {
@@ -187,6 +202,9 @@ export function startServer(port: number, token: string): Promise<number> {
         send(res, 200, result);
       } catch (err) {
         send(res, 400, errorBody(err));
+      } finally {
+        // The idle clock starts when the command ends, not when it began.
+        touch();
       }
       return;
     }
