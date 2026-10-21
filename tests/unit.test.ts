@@ -17,6 +17,8 @@ import { hostAllowed } from '../src/daemon/server.js';
 import { allowedUrl, sameDestination, shotPath } from '../src/daemon/commands.js';
 import { ROOT, findRoot, readEnvFile, rigDir, writeJsonAtomic } from '../src/daemon/state.js';
 import { isStale, newestSource } from '../src/bundle.js';
+import { toFacts } from '../src/metamask/background.js';
+import { toUiFacts } from '../src/metamask/uistate.js';
 import { networkPromptFromAria, rowFromAria } from '../src/metamask/popup.js';
 import { METAMASK_BUILTIN, isSettingsRoute, resolveNetworkName } from '../src/daemon/gate.js';
 import { assertNameFree, chainParams } from '../src/metamask/network.js';
@@ -480,4 +482,27 @@ test('bundle freshness: stale only when a source is newer than the bundle', () =
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('toFacts keeps only well-formed lower-case addresses and a numeric auto-lock', () => {
+  const a = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+  assert.deepEqual(toFacts({ selected: a, accounts: [a, 'junk', 7], autoLockMinutes: 0 }), {
+    selected: a,
+    accounts: [a],
+    autoLockMinutes: 0,
+  });
+  assert.deepEqual(toFacts({ selected: 'not-an-address', accounts: 'x' }), { selected: null, accounts: [], autoLockMinutes: null });
+  assert.equal(toFacts(null), null);
+  assert.equal(toFacts('x'), null);
+});
+
+test('toUiFacts: missing or odd fields read as the safe answer (locked, nothing pending)', () => {
+  assert.deepEqual(toUiFacts({ pending: 2, unlocked: true, onboarded: true, selected: '0x90f79bf6eb2c4f870365e785982e1f101e93b906' }), {
+    pending: 2,
+    unlocked: true,
+    onboarded: true,
+    selected: '0x90f79bf6eb2c4f870365e785982e1f101e93b906',
+  });
+  assert.deepEqual(toUiFacts({ pending: 'many', unlocked: 'yes' }), { pending: 0, unlocked: false, onboarded: false, selected: null });
+  assert.equal(toUiFacts(null), null);
 });
