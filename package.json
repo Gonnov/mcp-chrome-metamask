@@ -22,7 +22,8 @@
     "buy:loop": "tsx scripts/buy-loop.ts",
     "envless": "tsx scripts/envless-check.ts",
     "bench": "tsx scripts/bench.ts",
-    "build": "scripts/build-cli.sh"
+    "build": "scripts/build-cli.sh",
+    "e2e": "tsx scripts/e2e.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

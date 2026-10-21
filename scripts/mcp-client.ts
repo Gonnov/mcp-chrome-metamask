@@ -15,10 +15,11 @@ export class McpClient {
   private id = 0;
   private pending = new Map<number, (v: unknown) => void>();
 
-  constructor() {
+  /** `root` picks the checkout whose server to run, so an older copy can be driven too. */
+  constructor(root = ROOT) {
     this.child = spawn(
       process.execPath,
-      ['--import', resolve(ROOT, 'node_modules/tsx/dist/loader.mjs'), resolve(ROOT, 'src/mcp.ts')],
+      ['--import', resolve(root, 'node_modules/tsx/dist/loader.mjs'), resolve(root, 'src/mcp.ts')],
       { stdio: ['pipe', 'pipe', 'inherit'] },
     );
     this.child.stdout.setEncoding('utf8');

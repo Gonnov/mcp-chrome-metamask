@@ -1,0 +1,19 @@
+# Reject the wallet's connect prompt: the site must say so, and stay unconnected.
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+# The desktop layout: below ~1000 px the header's Connect moves into a bottom nav.
+resize --width 1440 --height 900 --target app
+eval "localStorage.clear(); sessionStorage.clear(); window.ethereum.request({method:'wallet_revokePermissions',params:[{eth_accounts:{}}]}).then(()=>'signed out')" --target app
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+?mm reject --all
+wait --sel '[data-onboarding-anchor="trade-submit"]' --timeout 30000
+# The header's own button: the trade card has a disabled "Connect Wallet" too.
+wait --sel 'button:text-is("Connect")' --timeout 30000
+click --sel 'button:text-is("Connect")'
+wait --text "Or connect a wallet" --timeout 15000
+click --text "Or connect a wallet"
+wait --text "MetaMask" --timeout 15000
+click --role button --name "MetaMask MetaMask Installed"
+wait --popup --timeout 25000
+mm reject
+wait --text "Connection failed" --timeout 15000 --target app
+eval "window.ethereum.request({method:'eth_accounts'}).then(a => a.length === 0 ? 'Connection failed, site unconnected' : Promise.reject(new Error('site still connected: ' + a)))" --target app

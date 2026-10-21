@@ -1,0 +1,11 @@
+# A site on Ethereum mainnet asks for a signature: approve must be refused (CHAIN_NOT_ALLOWED).
+# Runs on a neutral origin (the backend's health URL): the Laika app switches itself back to DogeOS.
+goto ${NEUTRAL} --timeout 60000
+mm request eth_requestAccounts
+eval "window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x1'}]}).then(() => window.ethereum.request({method:'eth_chainId'})).then(c => c === '0x1' ? c : Promise.reject(new Error('site is on ' + c + ', not mainnet')))" --target app
+eval "window.ethereum.request({method:'personal_sign',params:['${SIGN_HEX}','${ACCOUNT_0}']})" --fire --target app
+wait --popup --timeout 20000
+# Expected to fail: optional so the run goes on to clean up.
+?mm approve
+mm reject --all
+eval "window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x5fdaf3'}]}).then(() => window.ethereum.request({method:'eth_chainId'}))" --target app

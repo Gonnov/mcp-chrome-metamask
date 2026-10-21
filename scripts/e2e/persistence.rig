@@ -1,0 +1,3 @@
+# Run on a freshly restarted daemon: the wallet comes back unlocked, on #0, with no setup.
+mm status
+mm address

@@ -1,0 +1,10 @@
+# #0 -> #3 -> #0, each time checked by what the site itself sees (eth_accounts).
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+mm select --address ${ACCOUNT_3}
+eval "window.ethereum.request({method:'wallet_revokePermissions',params:[{eth_accounts:{}}]}).then(()=>'revoked')" --target app
+mm request eth_requestAccounts
+eval "window.ethereum.request({method:'eth_accounts'})" --target app
+mm select --address ${ACCOUNT_0}
+eval "window.ethereum.request({method:'wallet_revokePermissions',params:[{eth_accounts:{}}]}).then(()=>'revoked')" --target app
+mm request eth_requestAccounts
+eval "window.ethereum.request({method:'eth_accounts'})" --target app

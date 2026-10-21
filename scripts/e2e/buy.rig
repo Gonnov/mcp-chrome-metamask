@@ -1,0 +1,7 @@
+# Buy on the bonding curve from the site, through MetaMask: request, prompt, gate, approve.
+# The call is the deployed ecosystem's own ABI (see BUY_DATA in scripts/e2e.ts); the runner checks the chain.
+# Gas is fixed above the ~156k a buy uses: MetaMask's estimate sits at the edge and a shifted curve runs out of gas.
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+# Never send a transaction before checking which node MetaMask routes to.
+eval "window.ethereum.request({method:'eth_getBalance',params:['${ACCOUNT_0}','latest']}).then(b => BigInt(b) >= ${FORK_MIN_WEI}n ? 'fork' : Promise.reject(new Error('MetaMask is not on the fork: ' + b)))" --target app
+mm request eth_sendTransaction --params '[{"from":"${ACCOUNT_0}","to":"${ECOSYSTEM}","value":"${BUY_VALUE}","gas":"0x61a80","data":"${BUY_DATA}"}]'

@@ -1,0 +1,5 @@
+# personal_sign from the site: fire, wait for the wallet, approve. The runner recovers the signer.
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+eval "window.ethereum.request({method:'personal_sign',params:['${SIGN_HEX}','${ACCOUNT_0}']})" --fire --target app
+wait --popup --timeout 20000
+mm approve

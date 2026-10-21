@@ -1,0 +1,5 @@
+# Sell half the position: approve the ecosystem for it, then sell. Two transactions, two prompts.
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+eval "window.ethereum.request({method:'eth_getBalance',params:['${ACCOUNT_0}','latest']}).then(b => BigInt(b) >= ${FORK_MIN_WEI}n ? 'fork' : Promise.reject(new Error('MetaMask is not on the fork: ' + b)))" --target app
+mm request eth_sendTransaction --params '[{"from":"${ACCOUNT_0}","to":"${TOKEN}","data":"${APPROVE_DATA}"}]'
+mm request eth_sendTransaction --params '[{"from":"${ACCOUNT_0}","to":"${ECOSYSTEM}","gas":"0x61a80","data":"${SELL_DATA}"}]'

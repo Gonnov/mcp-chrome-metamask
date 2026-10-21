@@ -1,0 +1,22 @@
+# Connect MetaMask to Laika through the Tomo modal, then sign in with SIWE.
+# Starts signed out: the site's storage (SIWE token, wallet session) and its wallet permission are dropped first.
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+# The desktop layout: below ~1000 px the header's Connect moves into a bottom nav.
+resize --width 1440 --height 900 --target app
+eval "localStorage.clear(); sessionStorage.clear(); window.ethereum.request({method:'wallet_revokePermissions',params:[{eth_accounts:{}}]}).then(()=>'signed out')" --target app
+goto ${APP}/tokens?address=${TOKEN} --timeout 120000
+?mm reject --all
+wait --sel '[data-onboarding-anchor="trade-submit"]' --timeout 30000
+# The header's own button: the trade card has a disabled "Connect Wallet" too.
+wait --sel 'button:text-is("Connect")' --timeout 30000
+click --sel 'button:text-is("Connect")'
+wait --text "Or connect a wallet" --timeout 15000
+click --text "Or connect a wallet"
+wait --text "MetaMask" --timeout 15000
+click --role button --name "MetaMask MetaMask Installed"
+wait --popup --timeout 25000
+mm approve --all
+# The SIWE signature can trail the connect prompt: drain it if it is still queued.
+?wait --popup --timeout 4000
+?mm approve --all
+eval "new Promise((ok, ko) => { let n = 0; const t = setInterval(() => { const u = localStorage.getItem('laika_auth_user'); if (u) { clearInterval(t); ok(u); } else if (++n > 60) { clearInterval(t); ko(new Error('no SIWE session')); } }, 250); })" --target app
